@@ -1,0 +1,27 @@
+# Binaries
+*.exe
+*.exe~
+*.dll
+*.so
+*.dylib
+bin/
+dist/
+goloadtest
+
+# Test results and temporary files
+results/
+*.json
+!loadtest.json
+*.html
+*.log
+
+# Node dependencies
+node_modules/
+package-lock.json
+
+# Vendor
+vendor/
+
+# OS specific
+.DS_Store
+Thumbs.db

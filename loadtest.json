@@ -1,0 +1,49 @@
+{
+  "name": "API Load Test Suite",
+  "endpoints": [
+    {
+      "name": "Get Users",
+      "url": "http://localhost:8080/api/users",
+      "method": "GET",
+      "timeout": "5s",
+      "expectedStatus": [200],
+      "weight": 3
+    },
+    {
+      "name": "Create User",
+      "url": "http://localhost:8080/api/users",
+      "method": "POST",
+      "headers": {
+        "Content-Type": "application/json"
+      },
+      "body": "{\"name\":\"John Doe\",\"email\":\"john@example.com\"}",
+      "timeout": "5s",
+      "expectedStatus": [200, 201],
+      "weight": 1
+    }
+  ],
+  "duration": "10s",
+  "concurrency": 10,
+  "rampUp": "2s",
+  "rampDown": "1s",
+  "targetRps": 0,
+  "pattern": "constant",
+  "circuitBreaker": {
+    "enabled": true,
+    "maxErrorRate": 50.0,
+    "consecutiveFails": 100
+  },
+  "thresholds": {
+    "maxP95": "300ms",
+    "maxP99": "1s",
+    "maxAvgLatency": "150ms",
+    "maxErrorRate": 2.0,
+    "minThroughput": 10.0
+  },
+  "monitor": {
+    "enabled": true,
+    "localHost": true
+  },
+  "outputFormat": "all",
+  "outputPath": "./results"
+}
