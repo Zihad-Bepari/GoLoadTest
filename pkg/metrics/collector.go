@@ -23,24 +23,26 @@ type EndpointCollector struct {
 
 // Collector collects and computes all metrics during a load test.
 type Collector struct {
-	mu           sync.RWMutex
-	startTime    time.Time
-	endTime      time.Time
-	endpoints    map[string]*EndpointCollector
-	allLatencies []time.Duration
-	statusCodes  map[int]int64
-	errors       map[string]int
-	timeline     map[int64]*types.TimeSeriesPoint // bucketed by relative second
-	lastSec      int64
+	mu              sync.RWMutex
+	startTime       time.Time
+	endTime         time.Time
+	endpoints       map[string]*EndpointCollector
+	allLatencies    []time.Duration
+	statusCodes     map[int]int64
+	errors          map[string]int
+	timeline        map[int64]*types.TimeSeriesPoint // bucketed by relative second
+	bucketLatencies map[int64][]time.Duration        // per-second latency samples for chart computation
+	lastSec         int64
 }
 
 // NewCollector initializes a metrics collector.
 func NewCollector(endpoints []types.EndpointSpec) *Collector {
 	c := &Collector{
-		endpoints:   make(map[string]*EndpointCollector),
-		statusCodes: make(map[int]int64),
-		errors:      make(map[string]int),
-		timeline:    make(map[int64]*types.TimeSeriesPoint),
+		endpoints:       make(map[string]*EndpointCollector),
+		statusCodes:     make(map[int]int64),
+		errors:          make(map[string]int),
+		timeline:        make(map[int64]*types.TimeSeriesPoint),
+		bucketLatencies: make(map[int64][]time.Duration),
 	}
 
 	for _, ep := range endpoints {
@@ -119,6 +121,9 @@ func (c *Collector) Record(rec requester.ResponseRecord) {
 	} else {
 		bucket.Failures++
 	}
+
+	// Track per-bucket latencies for timeline chart computation
+	c.bucketLatencies[relSec] = append(c.bucketLatencies[relSec], rec.Duration)
 }
 
 // RecordSystemSample attaches system resource metrics (CPU/RAM) to the current timeline point.
@@ -223,11 +228,30 @@ func (c *Collector) Stop() types.TestResult {
 		return endpointResults[i].Name < endpointResults[j].Name
 	})
 
-	// Build timeline array sorted by relative seconds
+	// Build timeline array sorted by relative seconds, with computed latencies
 	timelineArray := make([]types.TimeSeriesPoint, 0, len(c.timeline))
 	for sec := int64(0); sec <= c.lastSec; sec++ {
 		if pt, ok := c.timeline[sec]; ok {
 			pt.RPS = float64(pt.Requests)
+
+			// Compute per-bucket latency stats from tracked samples
+			if lats, hasLats := c.bucketLatencies[sec]; hasLats && len(lats) > 0 {
+				var latSum time.Duration
+				for _, d := range lats {
+					latSum += d
+				}
+				pt.AvgLatencyMs = float64(latSum.Microseconds()) / float64(len(lats)) / 1000.0
+
+				// P95 for this bucket
+				bucketSorted := make([]time.Duration, len(lats))
+				copy(bucketSorted, lats)
+				sort.Slice(bucketSorted, func(i, j int) bool {
+					return bucketSorted[i] < bucketSorted[j]
+				})
+				p95Idx := int(float64(len(bucketSorted)-1) * 0.95)
+				pt.P95LatencyMs = float64(bucketSorted[p95Idx].Microseconds()) / 1000.0
+			}
+
 			timelineArray = append(timelineArray, *pt)
 		}
 	}

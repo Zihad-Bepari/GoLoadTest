@@ -21,7 +21,7 @@ func SaveResults(res types.TestResult, outputFormat string, outputDir string) er
 		return fmt.Errorf("failed to create output directory: %w", err)
 	}
 
-	timestamp := time.Now().Format("20060102-150405")
+	timestamp := time.Now().Format("20060102-150405.000")
 	baseName := fmt.Sprintf("loadtest-%s", timestamp)
 
 	format := strings.ToLower(outputFormat)

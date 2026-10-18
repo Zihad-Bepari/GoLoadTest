@@ -129,15 +129,18 @@ func (m *Monitor) sample() (cpuPercent float64, memoryMB float64) {
 	// Memory in Megabytes (Sys memory allocated from OS)
 	memoryMB = float64(mstats.Sys) / 1024.0 / 1024.0
 
-	// Approximated CPU utilization estimation based on goroutines and active work
+	// Approximated CPU utilization estimation based on goroutines vs available processors.
+	// Use GOMAXPROCS as the baseline and scale by a larger factor to avoid
+	// constant 100% saturation from normal goroutine counts during load tests.
 	numGoroutines := runtime.NumGoroutine()
-	numCPU := runtime.NumCPU()
-	approxCPU := (float64(numGoroutines) / float64(numCPU*10)) * 100.0
+	maxProcs := runtime.GOMAXPROCS(0)
+	// Each processor can reasonably multiplex ~50 goroutines before true saturation
+	approxCPU := (float64(numGoroutines) / float64(maxProcs*50)) * 100.0
 	if approxCPU > 100.0 {
 		approxCPU = 100.0
 	}
-	if approxCPU < 5.0 {
-		approxCPU = 5.0
+	if approxCPU < 1.0 {
+		approxCPU = 1.0
 	}
 	cpuPercent = approxCPU
 

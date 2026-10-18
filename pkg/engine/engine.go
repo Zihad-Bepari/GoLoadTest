@@ -39,6 +39,7 @@ type Engine struct {
 	// Runtime state
 	cancelFunc       context.CancelFunc
 	activeWorkers    int64
+	desiredWorkers   int64 // atomic: current target worker count for dynamic patterns
 	consecutiveFails int64
 	aborted          int32 // atomic bool
 	abortReason      string
@@ -128,14 +129,13 @@ func (e *Engine) Run(parentCtx context.Context) (types.TestResult, error) {
 	defer cancelWorkers()
 
 	maxWorkers := e.cfg.Concurrency
-	workerControlCh := make(chan int, maxWorkers)
+	atomic.StoreInt64(&e.desiredWorkers, int64(maxWorkers))
 
-	// Worker supervisor
+	// Worker supervisor: periodically updates desiredWorkers atomically
 	go func() {
 		ticker := time.NewTicker(200 * time.Millisecond)
 		defer ticker.Stop()
 
-		currentDesired := 1
 		for {
 			select {
 			case <-workerCtx.Done():
@@ -148,13 +148,7 @@ func (e *Engine) Run(parentCtx context.Context) (types.TestResult, error) {
 				}
 
 				desired := e.calculateDesiredWorkers(elapsed, maxWorkers)
-				if desired != currentDesired {
-					currentDesired = desired
-					select {
-					case workerControlCh <- desired:
-					default:
-					}
-				}
+				atomic.StoreInt64(&e.desiredWorkers, int64(desired))
 			}
 		}
 	}()
@@ -165,7 +159,7 @@ func (e *Engine) Run(parentCtx context.Context) (types.TestResult, error) {
 		workerID := i
 		go func() {
 			defer wg.Done()
-			e.runWorker(workerCtx, workerID, selector, rpsCh, workerControlCh)
+			e.runWorker(workerCtx, workerID, selector, rpsCh)
 		}()
 	}
 
@@ -266,12 +260,9 @@ func (e *Engine) runWorker(
 	workerID int,
 	selector *endpointSelector,
 	rpsCh chan struct{},
-	controlCh chan int,
 ) {
 	atomic.AddInt64(&e.activeWorkers, 1)
 	defer atomic.AddInt64(&e.activeWorkers, -1)
-
-	currentActiveLimit := e.cfg.Concurrency
 
 	for {
 		// Check if aborted
@@ -282,12 +273,11 @@ func (e *Engine) runWorker(
 		select {
 		case <-ctx.Done():
 			return
-		case newLimit := <-controlCh:
-			currentActiveLimit = newLimit
 		default:
 		}
 
 		// If this worker's index is currently throttled off by ramp, idle briefly
+		currentActiveLimit := int(atomic.LoadInt64(&e.desiredWorkers))
 		if workerID >= currentActiveLimit {
 			select {
 			case <-ctx.Done():
