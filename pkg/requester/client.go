@@ -33,7 +33,10 @@ type Client struct {
 }
 
 // NewClient creates an optimized HTTP client tuned for high-throughput load generation.
-func NewClient(timeout time.Duration, maxIdleConns int, insecureSkipVerify bool) *Client {
+//
+// Security: allowInsecureTLS should only be true for internal/self-signed servers in
+// controlled test environments. It MUST remain false for any production HTTPS endpoints.
+func NewClient(timeout time.Duration, maxIdleConns int, allowInsecureTLS bool) *Client {
 	if timeout <= 0 {
 		timeout = 10 * time.Second
 	}
@@ -55,7 +58,9 @@ func NewClient(timeout time.Duration, maxIdleConns int, insecureSkipVerify bool)
 		TLSHandshakeTimeout:   5 * time.Second,
 		ExpectContinueTimeout: 1 * time.Second,
 		TLSClientConfig: &tls.Config{
-			InsecureSkipVerify: insecureSkipVerify,
+			// #nosec G402 - InsecureSkipVerify is opt-in via allowInsecureTLS config flag.
+			// It is false by default and should only be enabled for internal test environments.
+			InsecureSkipVerify: allowInsecureTLS, //nolint:gosec
 		},
 	}
 

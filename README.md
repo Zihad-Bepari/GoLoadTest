@@ -56,7 +56,25 @@ flowchart TD
 
 ## 📦 Quick Start
 
-### 1. CLI Usage (Standalone Binary)
+### 1. Interactive Web Studio (Single Landing Page UI)
+
+Start the interactive dashboard server:
+
+```bash
+./goloadtest ui
+# Or specify host and port
+./goloadtest ui --host 127.0.0.1 --port 8989
+```
+
+Open your browser at `http://127.0.0.1:8989` to:
+- Configure endpoints & payload directly from the UI.
+- Toggle **Break-Until-Crash Mode** to automatically step up pressure until the server reaches its breaking point.
+- Monitor live real-time RPS, Latency curves, and Error distributions.
+- Inspect automated post-test diagnostic autopsies and latency percentiles (p50 to p99.9).
+
+---
+
+### 2. CLI Usage (Standalone Binary)
 
 Download the binary from [GitHub Releases](https://github.com/goloadtest/goloadtest/releases) or build from source:
 
@@ -69,8 +87,11 @@ go build -o goloadtest.exe ./cmd/goloadtest
 # Initialize a starter configuration
 ./goloadtest init
 
-# Run a test against your endpoint
+# Run a standard load test
 ./goloadtest run --url http://localhost:8080/api/users --duration 10s --concurrency 25
+
+# Run in Break-Until-Crash mode (ramps pressure until failure)
+./goloadtest run --url http://localhost:8080/api/users --break-to-crash --step-vu 20
 
 # Or run using your configuration file
 ./goloadtest run --config loadtest.json
@@ -78,7 +99,7 @@ go build -o goloadtest.exe ./cmd/goloadtest
 
 ---
 
-### 2. Go Native Integration
+### 3. Go Native Integration
 
 ```go
 package main

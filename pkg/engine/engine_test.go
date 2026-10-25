@@ -81,3 +81,52 @@ func TestEngine_CircuitBreaker(t *testing.T) {
 		t.Fatalf("expected abort reason, got empty")
 	}
 }
+
+func TestEngine_BreakToCrash(t *testing.T) {
+	var reqCount int64
+	// Mock server that works fine for first 50 requests, then crashes (returns 503)
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		current := atomic.AddInt64(&reqCount, 1)
+		if current > 40 {
+			http.Error(w, "server overloaded", http.StatusServiceUnavailable)
+			return
+		}
+		w.WriteHeader(http.StatusOK)
+		_, _ = w.Write([]byte(`{"status":"ok"}`))
+	}))
+	defer server.Close()
+
+	cfg := types.Config{
+		Name: "Break to Crash Test",
+		Endpoints: []types.EndpointSpec{
+			{Name: "DegradingAPI", URL: server.URL, Method: "GET"},
+		},
+		Duration:    10 * time.Second,
+		Concurrency: 10,
+		Pattern:     types.PatternBreakToCrash,
+		Stress: types.StressConfig{
+			Enabled:               true,
+			InitialConcurrency:    2,
+			StepConcurrency:       2,
+			StepInterval:          200 * time.Millisecond,
+			CrashConsecutiveFails: 10,
+			CrashErrorRate:        60.0,
+		},
+	}
+
+	eng := New(cfg)
+	res, err := eng.Run(context.Background())
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	if !res.Aborted {
+		t.Fatalf("expected break to crash mode to abort when server degraded")
+	}
+	if res.BreakingPoint == nil || !res.BreakingPoint.Detected {
+		t.Fatalf("expected breaking point to be captured")
+	}
+	if res.BreakingPoint.CrashConcurrency <= 0 {
+		t.Fatalf("expected positive crash concurrency, got %d", res.BreakingPoint.CrashConcurrency)
+	}
+}

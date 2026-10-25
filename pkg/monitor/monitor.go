@@ -5,19 +5,20 @@ import (
 	"io"
 	"net/http"
 	"runtime"
+	"runtime/metrics"
 	"strconv"
 	"strings"
 	"sync"
 	"time"
 
-	"github.com/goloadtest/goloadtest/pkg/metrics"
+	rmetrics "github.com/goloadtest/goloadtest/pkg/metrics"
 	"github.com/goloadtest/goloadtest/pkg/types"
 )
 
 // Monitor collects system resources (CPU, RAM) during test execution.
 type Monitor struct {
 	cfg       types.MonitorConfig
-	collector *metrics.Collector
+	collector *rmetrics.Collector
 	client    *http.Client
 	stopCh    chan struct{}
 	wg        sync.WaitGroup
@@ -28,10 +29,15 @@ type Monitor struct {
 	ramSum  float64
 	ramPeak float64
 	samples int
+
+	// CPU delta tracking for accurate % calculation
+	prevCPUSecs     float64
+	prevCPUTime     time.Time
+	cpuInitialized  bool
 }
 
 // New creates a new monitor.
-func New(cfg types.MonitorConfig, collector *metrics.Collector) *Monitor {
+func New(cfg types.MonitorConfig, collector *rmetrics.Collector) *Monitor {
 	if cfg.Interval <= 0 {
 		cfg.Interval = 1 * time.Second
 	}
@@ -114,7 +120,7 @@ func (m *Monitor) record(cpu float64, ram float64) {
 }
 
 func (m *Monitor) sample() (cpuPercent float64, memoryMB float64) {
-	// If custom /metrics URL is provided, try to scrape Prometheus metrics
+	// If a Prometheus /metrics URL is provided, try that first.
 	if m.cfg.MetricsURL != "" {
 		cpu, ram, ok := m.scrapePrometheus(m.cfg.MetricsURL)
 		if ok {
@@ -122,19 +128,72 @@ func (m *Monitor) sample() (cpuPercent float64, memoryMB float64) {
 		}
 	}
 
-	// Host runtime memory metrics
+	// --- Accurate CPU % via runtime/metrics (Go 1.16+) ---
+	cpuPercent = m.sampleRuntimeCPU()
+
+	// --- Memory: use runtime.MemStats (Sys = total bytes obtained from OS) ---
 	var mstats runtime.MemStats
 	runtime.ReadMemStats(&mstats)
-
-	// Memory in Megabytes (Sys memory allocated from OS)
 	memoryMB = float64(mstats.Sys) / 1024.0 / 1024.0
 
-	// Approximated CPU utilization estimation based on goroutines vs available processors.
-	// Use GOMAXPROCS as the baseline and scale by a larger factor to avoid
-	// constant 100% saturation from normal goroutine counts during load tests.
+	return cpuPercent, memoryMB
+}
+
+// sampleRuntimeCPU returns the Go process CPU utilisation as a percentage (0–100)
+// by reading the "/cpu/classes/total:cpu-seconds" runtime metric and computing
+// the delta between two successive samples relative to elapsed wall time and CPU count.
+func (m *Monitor) sampleRuntimeCPU() float64 {
+	samples := []metrics.Sample{
+		{Name: "/cpu/classes/total:cpu-seconds"},
+	}
+	metrics.Read(samples)
+
+	now := time.Now()
+
+	// Metric not available on this platform — fall back to goroutine estimate.
+	if samples[0].Value.Kind() != metrics.KindFloat64 {
+		return m.goroutineEstimateCPU()
+	}
+
+	currentCPUSecs := samples[0].Value.Float64()
+
+	m.mu.Lock()
+	defer m.mu.Unlock()
+
+	if !m.cpuInitialized {
+		// First sample: just record baseline, return 0.
+		m.prevCPUSecs = currentCPUSecs
+		m.prevCPUTime = now
+		m.cpuInitialized = true
+		return 0
+	}
+
+	elapsed := now.Sub(m.prevCPUTime).Seconds()
+	if elapsed <= 0 {
+		return 0
+	}
+
+	cpuUsed := currentCPUSecs - m.prevCPUSecs
+	m.prevCPUSecs = currentCPUSecs
+	m.prevCPUTime = now
+
+	numCPUs := float64(runtime.NumCPU())
+	pct := (cpuUsed / elapsed) / numCPUs * 100.0
+	if pct > 100.0 {
+		pct = 100.0
+	}
+	if pct < 0 {
+		pct = 0
+	}
+	return pct
+}
+
+// goroutineEstimateCPU provides a coarse CPU estimate when runtime/metrics
+// is unavailable (unusual, but defensive). The estimate is explicitly approximate.
+func (m *Monitor) goroutineEstimateCPU() float64 {
 	numGoroutines := runtime.NumGoroutine()
 	maxProcs := runtime.GOMAXPROCS(0)
-	// Each processor can reasonably multiplex ~50 goroutines before true saturation
+	// Each processor can reasonably multiplex ~50 goroutines before saturation.
 	approxCPU := (float64(numGoroutines) / float64(maxProcs*50)) * 100.0
 	if approxCPU > 100.0 {
 		approxCPU = 100.0
@@ -142,13 +201,11 @@ func (m *Monitor) sample() (cpuPercent float64, memoryMB float64) {
 	if approxCPU < 1.0 {
 		approxCPU = 1.0
 	}
-	cpuPercent = approxCPU
-
-	return cpuPercent, memoryMB
+	return approxCPU
 }
 
 func (m *Monitor) scrapePrometheus(url string) (float64, float64, bool) {
-	resp, err := m.client.Get(url)
+	resp, err := m.client.Get(url) //nolint:noctx
 	if err != nil {
 		return 0, 0, false
 	}

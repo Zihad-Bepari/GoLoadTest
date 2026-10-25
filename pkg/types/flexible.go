@@ -184,3 +184,37 @@ func (m *MonitorConfig) UnmarshalJSON(data []byte) error {
 
 	return nil
 }
+
+// UnmarshalJSON provides flexible duration parsing for StressConfig.
+func (s *StressConfig) UnmarshalJSON(data []byte) error {
+	type Alias StressConfig
+	aux := struct {
+		StepInterval    interface{} `json:"stepInterval"`
+		CrashMaxLatency interface{} `json:"crashMaxLatency"`
+		*Alias
+	}{
+		Alias: (*Alias)(s),
+	}
+
+	if err := json.Unmarshal(data, &aux); err != nil {
+		return err
+	}
+
+	if aux.StepInterval != nil {
+		dur, err := parseFlexibleDuration(aux.StepInterval)
+		if err != nil {
+			return fmt.Errorf("invalid stepInterval: %w", err)
+		}
+		s.StepInterval = dur
+	}
+
+	if aux.CrashMaxLatency != nil {
+		dur, err := parseFlexibleDuration(aux.CrashMaxLatency)
+		if err != nil {
+			return fmt.Errorf("invalid crashMaxLatency: %w", err)
+		}
+		s.CrashMaxLatency = dur
+	}
+
+	return nil
+}

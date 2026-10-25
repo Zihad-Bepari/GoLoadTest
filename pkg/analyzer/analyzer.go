@@ -103,6 +103,17 @@ func evaluateThresholds(th types.Thresholds, res *types.TestResult) {
 func detectBottlenecks(res *types.TestResult) {
 	insights := make([]types.BottleneckInsight, 0)
 
+	// 0. Breaking Point Analysis (Crash until breakdown)
+	if res.BreakingPoint != nil && res.BreakingPoint.Detected {
+		insights = append(insights, types.BottleneckInsight{
+			Title:       "⚡ Server Breaking Point Identified",
+			Severity:    "CRITICAL",
+			Description: fmt.Sprintf("Under stress ramp-up, the server crashed / became unresponsive at concurrency %d (Last stable concurrency: ~%d).", res.BreakingPoint.CrashConcurrency, res.BreakingPoint.MaxStableConcurrency),
+			Evidence:    fmt.Sprintf("Cause: %s | Peak Latency: %v | Error Rate: %.1f%%", res.BreakingPoint.CrashReason, res.BreakingPoint.CrashLatency, res.BreakingPoint.CrashErrorRate),
+			Suggestion:  "Review thread pool capacity, DB connection pooling limits, socket backlog (somaxconn), and memory footprint before scaling.",
+		})
+	}
+
 	// 1. Check for high error rate
 	if res.ErrorRate >= 2.0 {
 		insights = append(insights, types.BottleneckInsight{

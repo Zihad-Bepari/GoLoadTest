@@ -44,6 +44,7 @@ type Engine struct {
 	aborted          int32 // atomic bool
 	abortReason      string
 	abortMu          sync.Mutex
+	breakingPoint    *types.BreakingPointInfo
 }
 
 // New creates a new load testing engine.
@@ -55,7 +56,7 @@ func New(cfg types.Config) *Engine {
 		cfg.Duration = 10 * time.Second
 	}
 
-	client := requester.NewClient(15*time.Second, cfg.Concurrency*2, true)
+	client := requester.NewClient(15*time.Second, cfg.Concurrency*2, cfg.AllowInsecureTLS)
 	collector := metrics.NewCollector(cfg.Endpoints)
 
 	return &Engine{
@@ -183,6 +184,14 @@ func (e *Engine) Run(parentCtx context.Context) (types.TestResult, error) {
 		e.abortMu.Unlock()
 	}
 
+	e.abortMu.Lock()
+	if e.breakingPoint != nil {
+		e.breakingPoint.CrashRPS = result.ThroughputRPS
+		e.breakingPoint.MaxStableRPS = result.ThroughputRPS * 0.9
+		result.BreakingPoint = e.breakingPoint
+	}
+	e.abortMu.Unlock()
+
 	return result, nil
 }
 
@@ -241,6 +250,33 @@ func (e *Engine) calculateDesiredWorkers(elapsed time.Duration, maxWorkers int) 
 			return 1
 		}
 		return workers
+
+	case types.PatternBreakToCrash:
+		stress := e.cfg.Stress
+		initial := stress.InitialConcurrency
+		if initial <= 0 {
+			initial = 5
+		}
+		step := stress.StepConcurrency
+		if step <= 0 {
+			step = 10
+		}
+		interval := stress.StepInterval
+		if interval <= 0 {
+			interval = 2 * time.Second
+		}
+		stepCount := int(elapsed / interval)
+		targetWorkers := initial + (stepCount * step)
+		if stress.MaxConcurrency > 0 && targetWorkers > stress.MaxConcurrency {
+			targetWorkers = stress.MaxConcurrency
+		}
+		if targetWorkers > maxWorkers {
+			targetWorkers = maxWorkers
+		}
+		if targetWorkers < 1 {
+			return 1
+		}
+		return targetWorkers
 
 	default: // PatternConstant
 		if rampUp > 0 && elapsed < rampUp {
@@ -310,8 +346,68 @@ func (e *Engine) runWorker(
 		// Record metrics
 		e.collector.Record(record)
 
-		// Check circuit breaker
-		e.checkCircuitBreaker(record)
+		// Check circuit breaker or crash condition
+		if e.cfg.Pattern == types.PatternBreakToCrash || e.cfg.Stress.Enabled {
+			e.checkStressCrashCondition(record)
+		} else {
+			e.checkCircuitBreaker(record)
+		}
+	}
+}
+
+func (e *Engine) checkStressCrashCondition(rec requester.ResponseRecord) {
+	if !rec.Success {
+		atomic.AddInt64(&e.consecutiveFails, 1)
+	} else {
+		atomic.StoreInt64(&e.consecutiveFails, 0)
+	}
+
+	stress := e.cfg.Stress
+	crashFails := stress.CrashConsecutiveFails
+	if crashFails <= 0 {
+		crashFails = 25
+	}
+	crashErrorRate := stress.CrashErrorRate
+	if crashErrorRate <= 0 {
+		crashErrorRate = 80.0
+	}
+	crashLatency := stress.CrashMaxLatency
+	if crashLatency <= 0 {
+		crashLatency = 15 * time.Second
+	}
+
+	fails := atomic.LoadInt64(&e.consecutiveFails)
+	total, _, _, errRate, avgLat := e.collector.CurrentStats()
+	active := int(atomic.LoadInt64(&e.desiredWorkers))
+
+	var reason string
+	if fails >= int64(crashFails) {
+		reason = fmt.Sprintf("Server crashed or unreachable: %d consecutive failed/dropped requests", fails)
+	} else if total >= 30 && errRate >= crashErrorRate {
+		reason = fmt.Sprintf("Server failure threshold reached: Error rate at %.1f%% (threshold %.1f%%)", errRate, crashErrorRate)
+	} else if total >= 30 && avgLat >= crashLatency {
+		reason = fmt.Sprintf("Server freeze detected: Average latency at %v (threshold %v)", avgLat, crashLatency)
+	}
+
+	if reason != "" {
+		e.abortMu.Lock()
+		if e.breakingPoint == nil {
+			stableCon := active - stress.StepConcurrency
+			if stableCon < 1 {
+				stableCon = 1
+			}
+			e.breakingPoint = &types.BreakingPointInfo{
+				Detected:             true,
+				CrashConcurrency:     active,
+				MaxStableConcurrency: stableCon,
+				CrashLatency:         avgLat,
+				CrashErrorRate:       errRate,
+				CrashReason:          reason,
+			}
+		}
+		e.abortMu.Unlock()
+
+		e.triggerAbort(fmt.Sprintf("⚡ Breaking Point Reached: %s", reason))
 	}
 }
 

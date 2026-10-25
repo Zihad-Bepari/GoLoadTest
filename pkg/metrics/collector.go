@@ -4,6 +4,7 @@ import (
 	"math"
 	"sort"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/goloadtest/goloadtest/pkg/requester"
@@ -13,17 +14,31 @@ import (
 // EndpointCollector aggregates metrics for a single endpoint.
 type EndpointCollector struct {
 	spec        types.EndpointSpec
-	totalReqs   int64
-	successReqs int64
-	failedReqs  int64
+	totalReqs   int64 // atomic
+	successReqs int64 // atomic
+	failedReqs  int64 // atomic
+
+	// Protected by the parent Collector's mu
 	latencies   []time.Duration
 	statusCodes map[int]int64
 	errors      map[string]int
 }
 
 // Collector collects and computes all metrics during a load test.
+//
+// Scalability design:
+//   - Hot-path counters (total, success, fail, latency sum) are atomic — no lock needed for CurrentStats().
+//   - The main mutex is only acquired for slice appends and map updates (timeline, status codes, errors).
+//   - This dramatically reduces contention at high concurrency (1000+ virtual users).
 type Collector struct {
-	mu              sync.RWMutex
+	// Atomic hot-path counters — updated on every request, zero-contention reads.
+	atomicTotal      int64
+	atomicSuccess    int64
+	atomicFail       int64
+	atomicLatencySum int64 // nanoseconds; used for real-time avg latency
+
+	// Protected by mu — updated less frequently, or only at Stop().
+	mu              sync.Mutex
 	startTime       time.Time
 	endTime         time.Time
 	endpoints       map[string]*EndpointCollector
@@ -59,16 +74,26 @@ func NewCollector(endpoints []types.EndpointSpec) *Collector {
 // Start marks the beginning of the test.
 func (c *Collector) Start() {
 	c.mu.Lock()
-	defer c.mu.Unlock()
 	c.startTime = time.Now()
+	c.mu.Unlock()
 }
 
 // Record ingests a single request result safely from concurrent workers.
+// Hot-path atomics are updated first (no lock), then the mutex is acquired
+// only for slice and map mutations.
 func (c *Collector) Record(rec requester.ResponseRecord) {
-	c.mu.Lock()
-	defer c.mu.Unlock()
+	// --- Lock-free hot path ---
+	atomic.AddInt64(&c.atomicTotal, 1)
+	atomic.AddInt64(&c.atomicLatencySum, int64(rec.Duration))
+	if rec.Success {
+		atomic.AddInt64(&c.atomicSuccess, 1)
+	} else {
+		atomic.AddInt64(&c.atomicFail, 1)
+	}
 
-	// Update overall latencies and counts
+	// --- Mutex-protected path (slice appends, map updates, timeline) ---
+	c.mu.Lock()
+
 	c.allLatencies = append(c.allLatencies, rec.Duration)
 	if rec.StatusCode > 0 {
 		c.statusCodes[rec.StatusCode]++
@@ -81,14 +106,13 @@ func (c *Collector) Record(rec requester.ResponseRecord) {
 		c.errors[errMsg]++
 	}
 
-	// Update per-endpoint
-	epColl, exists := c.endpoints[rec.EndpointName]
-	if exists {
-		epColl.totalReqs++
+	// Per-endpoint tracking
+	if epColl, exists := c.endpoints[rec.EndpointName]; exists {
+		atomic.AddInt64(&epColl.totalReqs, 1)
 		if rec.Success {
-			epColl.successReqs++
+			atomic.AddInt64(&epColl.successReqs, 1)
 		} else {
-			epColl.failedReqs++
+			atomic.AddInt64(&epColl.failedReqs, 1)
 			epColl.errors[rec.ErrorMessage]++
 		}
 		epColl.latencies = append(epColl.latencies, rec.Duration)
@@ -97,7 +121,7 @@ func (c *Collector) Record(rec requester.ResponseRecord) {
 		}
 	}
 
-	// Update timeline bucket
+	// Timeline bucketing (per second)
 	relSec := int64(time.Since(c.startTime).Seconds())
 	if relSec < 0 {
 		relSec = 0
@@ -121,9 +145,9 @@ func (c *Collector) Record(rec requester.ResponseRecord) {
 	} else {
 		bucket.Failures++
 	}
-
-	// Track per-bucket latencies for timeline chart computation
 	c.bucketLatencies[relSec] = append(c.bucketLatencies[relSec], rec.Duration)
+
+	c.mu.Unlock()
 }
 
 // RecordSystemSample attaches system resource metrics (CPU/RAM) to the current timeline point.
@@ -148,29 +172,18 @@ func (c *Collector) RecordSystemSample(cpuPercent float64, memoryMB float64, act
 	bucket.ActiveUsers = activeUsers
 }
 
-// CurrentStats provides a snapshot of current progress for live monitoring and circuit breaker.
+// CurrentStats provides a real-time snapshot for the live progress display and circuit breaker.
+// This method is fully lock-free via atomic reads — zero contention with workers.
 func (c *Collector) CurrentStats() (total int64, success int64, fail int64, errorRate float64, avgLatency time.Duration) {
-	c.mu.RLock()
-	defer c.mu.RUnlock()
+	total = atomic.LoadInt64(&c.atomicTotal)
+	fail = atomic.LoadInt64(&c.atomicFail)
+	success = atomic.LoadInt64(&c.atomicSuccess)
 
-	total = int64(len(c.allLatencies))
-	if total == 0 {
-		return 0, 0, 0, 0, 0
+	if total > 0 {
+		errorRate = (float64(fail) / float64(total)) * 100.0
+		avgLatency = time.Duration(atomic.LoadInt64(&c.atomicLatencySum) / total)
 	}
-
-	for _, count := range c.errors {
-		fail += int64(count)
-	}
-	success = total - fail
-	errorRate = (float64(fail) / float64(total)) * 100.0
-
-	var sumDur time.Duration
-	for _, d := range c.allLatencies {
-		sumDur += d
-	}
-	avgLatency = sumDur / time.Duration(total)
-
-	return total, success, fail, errorRate, avgLatency
+	return
 }
 
 // Stop marks the end of collection and computes final results.
@@ -184,12 +197,9 @@ func (c *Collector) Stop() types.TestResult {
 		totalDur = time.Millisecond
 	}
 
-	totalReqs := int64(len(c.allLatencies))
-	var failedReqs int64
-	for _, count := range c.errors {
-		failedReqs += int64(count)
-	}
-	successReqs := totalReqs - failedReqs
+	totalReqs := atomic.LoadInt64(&c.atomicTotal)
+	failedReqs := atomic.LoadInt64(&c.atomicFail)
+	successReqs := atomic.LoadInt64(&c.atomicSuccess)
 
 	var errorRate float64
 	if totalReqs > 0 {
@@ -202,19 +212,23 @@ func (c *Collector) Stop() types.TestResult {
 	// Build endpoint results
 	endpointResults := make([]types.EndpointResult, 0, len(c.endpoints))
 	for _, epColl := range c.endpoints {
+		epTotal := atomic.LoadInt64(&epColl.totalReqs)
+		epFailed := atomic.LoadInt64(&epColl.failedReqs)
+		epSuccess := atomic.LoadInt64(&epColl.successReqs)
+
 		var epErrorRate float64
-		if epColl.totalReqs > 0 {
-			epErrorRate = (float64(epColl.failedReqs) / float64(epColl.totalReqs)) * 100.0
+		if epTotal > 0 {
+			epErrorRate = (float64(epFailed) / float64(epTotal)) * 100.0
 		}
-		epRPS := float64(epColl.totalReqs) / totalDur.Seconds()
+		epRPS := float64(epTotal) / totalDur.Seconds()
 
 		endpointResults = append(endpointResults, types.EndpointResult{
 			Name:            epColl.spec.Name,
 			URL:             epColl.spec.URL,
 			Method:          epColl.spec.Method,
-			TotalRequests:   epColl.totalReqs,
-			SuccessRequests: epColl.successReqs,
-			FailedRequests:  epColl.failedReqs,
+			TotalRequests:   epTotal,
+			SuccessRequests: epSuccess,
+			FailedRequests:  epFailed,
 			ErrorRate:       epErrorRate,
 			RPS:             epRPS,
 			Latency:         calculateLatencyStats(epColl.latencies),
@@ -223,18 +237,17 @@ func (c *Collector) Stop() types.TestResult {
 		})
 	}
 
-	// Sort endpoints by name for deterministic order
+	// Sort endpoints by name for deterministic output
 	sort.Slice(endpointResults, func(i, j int) bool {
 		return endpointResults[i].Name < endpointResults[j].Name
 	})
 
-	// Build timeline array sorted by relative seconds, with computed latencies
+	// Build timeline array sorted by relative second, with computed latencies
 	timelineArray := make([]types.TimeSeriesPoint, 0, len(c.timeline))
 	for sec := int64(0); sec <= c.lastSec; sec++ {
 		if pt, ok := c.timeline[sec]; ok {
 			pt.RPS = float64(pt.Requests)
 
-			// Compute per-bucket latency stats from tracked samples
 			if lats, hasLats := c.bucketLatencies[sec]; hasLats && len(lats) > 0 {
 				var latSum time.Duration
 				for _, d := range lats {
@@ -242,7 +255,6 @@ func (c *Collector) Stop() types.TestResult {
 				}
 				pt.AvgLatencyMs = float64(latSum.Microseconds()) / float64(len(lats)) / 1000.0
 
-				// P95 for this bucket
 				bucketSorted := make([]time.Duration, len(lats))
 				copy(bucketSorted, lats)
 				sort.Slice(bucketSorted, func(i, j int) bool {
@@ -309,6 +321,7 @@ func calculateLatencyStats(durations []time.Duration) types.LatencyStats {
 		P90:    percentile(sorted, 90),
 		P95:    percentile(sorted, 95),
 		P99:    percentile(sorted, 99),
+		P999:   percentile(sorted, 99.9),
 		StdDev: stdDev,
 	}
 }

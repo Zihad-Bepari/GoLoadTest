@@ -13,7 +13,20 @@ type LatencyStats struct {
 	P90    time.Duration `json:"p90"`
 	P95    time.Duration `json:"p95"`
 	P99    time.Duration `json:"p99"`
+	P999   time.Duration `json:"p999"`
 	StdDev time.Duration `json:"stdDev"`
+}
+
+// BreakingPointInfo holds the exact inflection point when the server degraded or crashed.
+type BreakingPointInfo struct {
+	Detected             bool          `json:"detected"`
+	CrashConcurrency     int           `json:"crashConcurrency"`     // Concurrency level where breakdown happened
+	MaxStableConcurrency int           `json:"maxStableConcurrency"` // Last healthy concurrency level
+	MaxStableRPS         float64       `json:"maxStableRps"`         // Max RPS achieved prior to degradation
+	CrashRPS             float64       `json:"crashRps"`             // RPS during collapse
+	CrashLatency         time.Duration `json:"crashLatency"`         // Latency when server gave up
+	CrashErrorRate       float64       `json:"crashErrorRate"`       // Final error rate
+	CrashReason          string        `json:"crashReason"`          // Cause: "HTTP 502/503 spike", "Connection Refused", "Socket Timeouts", etc.
 }
 
 // EndpointResult contains metrics for an individual endpoint.
@@ -92,6 +105,7 @@ type TestResult struct {
 	Thresholds      []ThresholdEvaluation  `json:"thresholds"`
 	Passed          bool                   `json:"passed"`
 	Bottlenecks     []BottleneckInsight    `json:"bottlenecks"`
+	BreakingPoint   *BreakingPointInfo     `json:"breakingPoint,omitempty"`
 	Aborted         bool                   `json:"aborted"`
 	AbortReason     string                 `json:"abortReason,omitempty"`
 }
