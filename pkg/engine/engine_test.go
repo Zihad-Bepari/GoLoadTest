@@ -130,3 +130,35 @@ func TestEngine_BreakToCrash(t *testing.T) {
 		t.Fatalf("expected positive crash concurrency, got %d", res.BreakingPoint.CrashConcurrency)
 	}
 }
+
+func TestEngine_BaseURL_Resolution(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == "/api/v1/auto" {
+			w.WriteHeader(http.StatusOK)
+			_, _ = w.Write([]byte(`{"status":"auto_ok"}`))
+			return
+		}
+		http.NotFound(w, r)
+	}))
+	defer server.Close()
+
+	cfg := types.Config{
+		Name:    "BaseURL Resolution Test",
+		BaseURL: server.URL,
+		Endpoints: []types.EndpointSpec{
+			{Name: "RelativeRoute", URL: "/api/v1/auto", Method: "GET"},
+		},
+		Duration:    500 * time.Millisecond,
+		Concurrency: 2,
+	}
+
+	eng := New(cfg)
+	res, err := eng.Run(context.Background())
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	if res.TotalRequests == 0 || res.SuccessRequests != res.TotalRequests {
+		t.Fatalf("expected all requests to succeed via BaseURL resolution, got %d / %d", res.SuccessRequests, res.TotalRequests)
+	}
+}

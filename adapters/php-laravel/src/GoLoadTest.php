@@ -46,8 +46,22 @@ class GoLoadTest
 
         $tempConfig = tempnam(sys_get_temp_dir(), 'glt_') . '.json';
 
+        $breakUntilCrash = !empty($options['breakUntilCrash']) || (($options['pattern'] ?? '') === 'break-to-crash');
+        $pattern = $breakUntilCrash ? 'break-to-crash' : ($options['pattern'] ?? 'constant');
+
+        $stressConfig = [
+            'enabled' => $breakUntilCrash,
+            'initialConcurrency' => $options['initialConcurrency'] ?? 5,
+            'stepConcurrency' => $options['stepConcurrency'] ?? 15,
+            'stepInterval' => $options['stepInterval'] ?? '2s',
+            'crashErrorRate' => $options['crashThreshold'] ?? 50.0,
+            'crashConsecutiveFails' => 25,
+            'crashMaxLatency' => '10s',
+        ];
+
         $config = [
             'name' => $options['name'] ?? 'PHP/Laravel API Load Test',
+            'baseUrl' => $options['baseUrl'] ?? '',
             'endpoints' => $options['endpoints'] ?? [
                 [
                     'name' => $options['name'] ?? 'Default Endpoint',
@@ -59,10 +73,11 @@ class GoLoadTest
                     'expectedStatus' => $options['expectedStatus'] ?? [200],
                 ]
             ],
-            'duration' => $options['duration'] ?? '10s',
-            'concurrency' => $options['concurrency'] ?? 10,
+            'duration' => $options['duration'] ?? '15s',
+            'concurrency' => $options['concurrency'] ?? ($breakUntilCrash ? 200 : 10),
             'targetRps' => $options['targetRps'] ?? 0,
-            'pattern' => $options['pattern'] ?? 'constant',
+            'pattern' => $pattern,
+            'stress' => $stressConfig,
             'thresholds' => $options['thresholds'] ?? [
                 'maxP95' => $options['maxP95'] ?? '300ms',
                 'maxErrorRate' => $options['maxErrorRate'] ?? 2.0,

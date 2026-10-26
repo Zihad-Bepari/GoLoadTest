@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"math/rand"
+	"strings"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -54,6 +55,27 @@ func New(cfg types.Config) *Engine {
 	}
 	if cfg.Duration <= 0 {
 		cfg.Duration = 10 * time.Second
+	}
+
+	// Normalize relative URLs with BaseURL if provided
+	if cfg.BaseURL != "" {
+		baseURL := strings.TrimRight(cfg.BaseURL, "/")
+		for i := range cfg.Endpoints {
+			u := cfg.Endpoints[i].URL
+			if !strings.HasPrefix(u, "http://") && !strings.HasPrefix(u, "https://") {
+				if !strings.HasPrefix(u, "/") {
+					u = "/" + u
+				}
+				cfg.Endpoints[i].URL = baseURL + u
+			}
+		}
+	}
+
+	// Normalize loopback localhost to 127.0.0.1 for bulletproof Windows network stack compatibility
+	for i := range cfg.Endpoints {
+		if strings.Contains(cfg.Endpoints[i].URL, "://localhost") {
+			cfg.Endpoints[i].URL = strings.Replace(cfg.Endpoints[i].URL, "://localhost", "://127.0.0.1", 1)
+		}
 	}
 
 	client := requester.NewClient(15*time.Second, cfg.Concurrency*2, cfg.AllowInsecureTLS)
@@ -130,7 +152,13 @@ func (e *Engine) Run(parentCtx context.Context) (types.TestResult, error) {
 	defer cancelWorkers()
 
 	maxWorkers := e.cfg.Concurrency
-	atomic.StoreInt64(&e.desiredWorkers, int64(maxWorkers))
+
+	// Compute initial desired workers immediately based on pattern (starts with initial concurrency e.g. 5, not max concurrency!)
+	initialDesired := e.calculateDesiredWorkers(0, maxWorkers)
+	if initialDesired < 1 {
+		initialDesired = 1
+	}
+	atomic.StoreInt64(&e.desiredWorkers, int64(initialDesired))
 
 	// Worker supervisor: periodically updates desiredWorkers atomically
 	go func() {
@@ -343,8 +371,12 @@ func (e *Engine) runWorker(
 			return
 		}
 
-		// Record metrics
-		e.collector.Record(record)
+		// Record metrics with current active concurrency
+		currentWorkers := int(atomic.LoadInt64(&e.desiredWorkers))
+		if currentWorkers < 1 {
+			currentWorkers = 1
+		}
+		e.collector.RecordWithWorkers(record, currentWorkers)
 
 		// Check circuit breaker or crash condition
 		if e.cfg.Pattern == types.PatternBreakToCrash || e.cfg.Stress.Enabled {
@@ -356,7 +388,7 @@ func (e *Engine) runWorker(
 }
 
 func (e *Engine) checkStressCrashCondition(rec requester.ResponseRecord) {
-	if !rec.Success {
+	if rec.ServerDown {
 		atomic.AddInt64(&e.consecutiveFails, 1)
 	} else {
 		atomic.StoreInt64(&e.consecutiveFails, 0)
@@ -382,10 +414,14 @@ func (e *Engine) checkStressCrashCondition(rec requester.ResponseRecord) {
 
 	var reason string
 	if fails >= int64(crashFails) {
-		reason = fmt.Sprintf("Server crashed or unreachable: %d consecutive failed/dropped requests", fails)
-	} else if total >= 30 && errRate >= crashErrorRate {
+		if strings.Contains(rec.ErrorMessage, "actively refused") || strings.Contains(rec.ErrorMessage, "connection refused") {
+			reason = fmt.Sprintf("Target server is offline or unreachable (%s)", rec.ErrorMessage)
+		} else {
+			reason = fmt.Sprintf("Server crashed or unreachable: %d consecutive failed/dropped requests", fails)
+		}
+	} else if total >= 50 && errRate >= crashErrorRate {
 		reason = fmt.Sprintf("Server failure threshold reached: Error rate at %.1f%% (threshold %.1f%%)", errRate, crashErrorRate)
-	} else if total >= 30 && avgLat >= crashLatency {
+	} else if total >= 50 && avgLat >= crashLatency {
 		reason = fmt.Sprintf("Server freeze detected: Average latency at %v (threshold %v)", avgLat, crashLatency)
 	}
 
@@ -416,7 +452,7 @@ func (e *Engine) checkCircuitBreaker(rec requester.ResponseRecord) {
 		return
 	}
 
-	if !rec.Success {
+	if rec.ServerDown {
 		atomic.AddInt64(&e.consecutiveFails, 1)
 	} else {
 		atomic.StoreInt64(&e.consecutiveFails, 0)

@@ -1,6 +1,6 @@
 import { Injectable } from '@nestjs/common';
-import { runLoadTest } from '../nodejs';
-import type { LoadTestOptions, TestResult } from '../nodejs';
+import { runLoadTest, autoTest, extractRoutes } from '../nodejs';
+import type { LoadTestOptions, TestResult, DiscoveredRoute } from '../nodejs';
 
 /**
  * GoLoadTestService — NestJS injectable service for high-performance load testing.
@@ -9,12 +9,10 @@ import type { LoadTestOptions, TestResult } from '../nodejs';
  *   Import GoLoadTestModule into any NestJS module, then inject GoLoadTestService
  *   via constructor injection in your test class or service.
  *
- * Example (e2e test):
- *   const result = await this.loadTestService.run({
- *     url: 'http://localhost:3000/api/users',
- *     duration: '30s',
- *     concurrency: 50,
- *     thresholds: { maxP95: '200ms', maxErrorRate: 1.0 },
+ * Example (Auto all-routes discovery):
+ *   const result = await this.loadTestService.autoTest(app, {
+ *     duration: '20s',
+ *     breakUntilCrash: true,
  *   });
  */
 @Injectable()
@@ -26,5 +24,35 @@ export class GoLoadTestService {
    */
   async run(options: LoadTestOptions): Promise<TestResult> {
     return runLoadTest(options);
+  }
+
+  /**
+   * Automatically discovers all routes from the NestJS application instance,
+   * resolves its base URL, and executes a full stress test until breaking point.
+   */
+  async autoTest(app: any, options: LoadTestOptions = {}): Promise<TestResult> {
+    let baseUrl = options.baseUrl;
+    if (!baseUrl && typeof app.getUrl === 'function') {
+      try {
+        baseUrl = await app.getUrl();
+        baseUrl = baseUrl.replace('[::1]', '127.0.0.1').replace('0.0.0.0', '127.0.0.1');
+      } catch (_) {}
+    }
+
+    const instance = (app.getHttpAdapter && app.getHttpAdapter())
+      ? app.getHttpAdapter().getInstance()
+      : (app.getHttpServer ? app.getHttpServer() : app);
+
+    return autoTest(instance, { ...options, baseUrl });
+  }
+
+  /**
+   * Discovers all routes from a NestJS application.
+   */
+  extractRoutes(app: any): DiscoveredRoute[] {
+    const instance = (app.getHttpAdapter && app.getHttpAdapter())
+      ? app.getHttpAdapter().getInstance()
+      : (app.getHttpServer ? app.getHttpServer() : app);
+    return extractRoutes(instance);
   }
 }

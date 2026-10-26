@@ -1,6 +1,7 @@
 package metrics
 
 import (
+	"fmt"
 	"math"
 	"sort"
 	"sync"
@@ -13,10 +14,12 @@ import (
 
 // EndpointCollector aggregates metrics for a single endpoint.
 type EndpointCollector struct {
-	spec        types.EndpointSpec
-	totalReqs   int64 // atomic
-	successReqs int64 // atomic
-	failedReqs  int64 // atomic
+	spec                  types.EndpointSpec
+	totalReqs             int64 // atomic
+	successReqs           int64 // atomic
+	failedReqs            int64 // atomic
+	maxSuccessConcurrency int64
+	breakingConcurrency   int64
 
 	// Protected by the parent Collector's mu
 	latencies   []time.Duration
@@ -78,10 +81,14 @@ func (c *Collector) Start() {
 	c.mu.Unlock()
 }
 
-// Record ingests a single request result safely from concurrent workers.
-// Hot-path atomics are updated first (no lock), then the mutex is acquired
-// only for slice and map mutations.
+// Record ingests a single request result safely with default 1 worker.
 func (c *Collector) Record(rec requester.ResponseRecord) {
+	c.RecordWithWorkers(rec, 1)
+}
+
+// RecordWithWorkers ingests a single request result safely from concurrent workers
+// while capturing the active worker count for endpoint-level breaking point analysis.
+func (c *Collector) RecordWithWorkers(rec requester.ResponseRecord, activeWorkers int) {
 	// --- Lock-free hot path ---
 	atomic.AddInt64(&c.atomicTotal, 1)
 	atomic.AddInt64(&c.atomicLatencySum, int64(rec.Duration))
@@ -109,10 +116,17 @@ func (c *Collector) Record(rec requester.ResponseRecord) {
 	// Per-endpoint tracking
 	if epColl, exists := c.endpoints[rec.EndpointName]; exists {
 		atomic.AddInt64(&epColl.totalReqs, 1)
+		w := int64(activeWorkers)
 		if rec.Success {
 			atomic.AddInt64(&epColl.successReqs, 1)
+			if w > epColl.maxSuccessConcurrency {
+				epColl.maxSuccessConcurrency = w
+			}
 		} else {
 			atomic.AddInt64(&epColl.failedReqs, 1)
+			if epColl.breakingConcurrency == 0 {
+				epColl.breakingConcurrency = w
+			}
 			epColl.errors[rec.ErrorMessage]++
 		}
 		epColl.latencies = append(epColl.latencies, rec.Duration)
@@ -222,6 +236,25 @@ func (c *Collector) Stop() types.TestResult {
 		}
 		epRPS := float64(epTotal) / totalDur.Seconds()
 
+		var statusLabel string
+		if epTotal == 0 {
+			statusLabel = "Not Tested / Unreachable (সার্ভার অফলাইন)"
+		} else if epFailed > 0 && epFailed == epTotal {
+			if epColl.breakingConcurrency > 0 {
+				statusLabel = fmt.Sprintf("Crashed at %d Users (100%% Error)", epColl.breakingConcurrency)
+			} else {
+				statusLabel = "Crashed (100% Error)"
+			}
+		} else if epFailed > 0 {
+			if epColl.breakingConcurrency > 0 {
+				statusLabel = fmt.Sprintf("Degraded at %d Users (%.1f%% Error)", epColl.breakingConcurrency, epErrorRate)
+			} else {
+				statusLabel = fmt.Sprintf("Degraded (%.1f%% Error)", epErrorRate)
+			}
+		} else {
+			statusLabel = fmt.Sprintf("Stable (Handled up to %d Users)", epColl.maxSuccessConcurrency)
+		}
+
 		endpointResults = append(endpointResults, types.EndpointResult{
 			Name:            epColl.spec.Name,
 			URL:             epColl.spec.URL,
@@ -231,6 +264,9 @@ func (c *Collector) Stop() types.TestResult {
 			FailedRequests:  epFailed,
 			ErrorRate:       epErrorRate,
 			RPS:             epRPS,
+			MaxUsers:        int(epColl.maxSuccessConcurrency),
+			BreakingUsers:   int(epColl.breakingConcurrency),
+			StatusLabel:     statusLabel,
 			Latency:         calculateLatencyStats(epColl.latencies),
 			StatusCodes:     epColl.statusCodes,
 			Errors:          epColl.errors,

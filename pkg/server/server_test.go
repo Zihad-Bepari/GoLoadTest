@@ -6,6 +6,8 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/goloadtest/goloadtest/pkg/types"
 )
 
 func TestServer_Index(t *testing.T) {
@@ -64,11 +66,17 @@ func TestServer_StartAndStatus(t *testing.T) {
 	}
 
 	// Wait for test to complete
-	time.Sleep(1200 * time.Millisecond)
-
-	s.mu.Lock()
-	lastRes := s.lastResult
-	s.mu.Unlock()
+	deadline := time.Now().Add(4 * time.Second)
+	var lastRes *types.TestResult
+	for time.Now().Before(deadline) {
+		s.mu.Lock()
+		lastRes = s.lastResult
+		s.mu.Unlock()
+		if lastRes != nil {
+			break
+		}
+		time.Sleep(100 * time.Millisecond)
+	}
 
 	if lastRes == nil {
 		t.Fatalf("expected lastResult to be populated")

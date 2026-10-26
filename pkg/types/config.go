@@ -81,6 +81,7 @@ type MonitorConfig struct {
 // Config is the top-level configuration for a load test suite.
 type Config struct {
 	Name             string               `json:"name" yaml:"name"`
+	BaseURL          string               `json:"baseUrl,omitempty" yaml:"baseUrl,omitempty"` // Base URL for relative endpoint paths
 	Endpoints        []EndpointSpec       `json:"endpoints" yaml:"endpoints"`
 	Duration         time.Duration        `json:"duration" yaml:"duration"`
 	Concurrency      int                  `json:"concurrency" yaml:"concurrency"` // Virtual Users / Goroutine workers

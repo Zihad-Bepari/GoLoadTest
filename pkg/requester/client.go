@@ -23,6 +23,7 @@ type ResponseRecord struct {
 	Duration     time.Duration
 	Timestamp    time.Time
 	Success      bool
+	ServerDown   bool // true on 5xx server crash or network drop/refusal
 	ErrorMessage string
 	BytesRead    int64
 }
@@ -135,6 +136,7 @@ func (c *Client) Execute(ctx context.Context, spec types.EndpointSpec) ResponseR
 
 	if err != nil {
 		record.Success = false
+		record.ServerDown = true
 		record.ErrorMessage = categorizeError(err)
 		return record
 	}
@@ -156,15 +158,26 @@ func (c *Client) Execute(ctx context.Context, spec types.EndpointSpec) ResponseR
 			}
 		}
 		record.Success = matched
+		if resp.StatusCode >= 500 {
+			record.ServerDown = true
+		}
 		if !matched {
 			record.ErrorMessage = fmt.Sprintf("unexpected status: %d", resp.StatusCode)
 		}
 	} else {
-		// Default rule: 2xx and 3xx are successes
+		// Default rule:
+		// 2xx & 3xx: Success
+		// 4xx (400, 401, 403, 404): Handled by server (e.g. protected endpoints). Server is healthy!
+		// 5xx (500, 502, 503, 504): Server crash / breakdown
 		if resp.StatusCode >= 200 && resp.StatusCode < 400 {
 			record.Success = true
+		} else if resp.StatusCode >= 400 && resp.StatusCode < 500 {
+			record.Success = true
+			record.ServerDown = false
+			record.ErrorMessage = fmt.Sprintf("HTTP %d %s", resp.StatusCode, http.StatusText(resp.StatusCode))
 		} else {
 			record.Success = false
+			record.ServerDown = true
 			record.ErrorMessage = fmt.Sprintf("HTTP %d %s", resp.StatusCode, http.StatusText(resp.StatusCode))
 		}
 	}

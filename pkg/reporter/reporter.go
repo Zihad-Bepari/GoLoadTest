@@ -125,19 +125,48 @@ func renderHTML(res types.TestResult) string {
 	// Build Endpoints table rows
 	var endpointRows strings.Builder
 	for _, ep := range res.Endpoints {
+		var statusBadge string
+		if ep.TotalRequests == 0 {
+			statusBadge = `<span class="badge badge-abort">Not Reached (Server Down)</span>`
+		} else if ep.ErrorRate >= 80 {
+			statusBadge = fmt.Sprintf(`<span class="badge badge-fail">Crashed (%0.1f%% Error)</span>`, ep.ErrorRate)
+		} else if ep.ErrorRate > 0 {
+			statusBadge = fmt.Sprintf(`<span class="badge badge-abort">Degraded (%0.1f%% Error)</span>`, ep.ErrorRate)
+		} else {
+			statusBadge = `<span class="badge badge-pass">Stable &amp; Handled</span>`
+		}
+
+		userCap := "-"
+		if ep.TotalRequests > 0 {
+			if ep.BreakingUsers > 0 {
+				userCap = fmt.Sprintf("Broke at %d Users", ep.BreakingUsers)
+			} else if ep.MaxUsers > 0 {
+				userCap = fmt.Sprintf("Handled %d Users", ep.MaxUsers)
+			} else if res.BreakingPoint != nil && res.BreakingPoint.MaxStableConcurrency > 0 {
+				userCap = fmt.Sprintf("Handled %d Users", res.BreakingPoint.MaxStableConcurrency)
+			} else {
+				userCap = "Stable"
+			}
+		}
+
+		reqsDisplay := fmt.Sprintf("%d (Success: %d / Fail: %d)", ep.TotalRequests, ep.SuccessRequests, ep.FailedRequests)
+		if ep.TotalRequests == 0 {
+			reqsDisplay = "0 reqs (Server Unreachable)"
+		}
+
 		endpointRows.WriteString(fmt.Sprintf(`
 			<tr>
 				<td><span class="method-tag method-%s">%s</span> <strong>%s</strong><br/><small class="text-muted">%s</small></td>
-				<td>%d</td>
-				<td>%.1f</td>
+				<td>%s</td>
+				<td><strong>%s</strong></td>
+				<td>%.1f req/s</td>
 				<td>%v</td>
 				<td>%v</td>
-				<td>%v</td>
-				<td class="%s">%.2f%%</td>
+				<td>%s</td>
 			</tr>`,
 			strings.ToLower(ep.Method), ep.Method, ep.Name, ep.URL,
-			ep.TotalRequests, ep.RPS, ep.Latency.Mean, ep.Latency.P95, ep.Latency.P99,
-			mapErrorClass(ep.ErrorRate), ep.ErrorRate))
+			reqsDisplay, userCap, ep.RPS, ep.Latency.Mean.Round(time.Millisecond), ep.Latency.P95.Round(time.Millisecond),
+			statusBadge))
 	}
 
 	// Build status codes summary badges
@@ -378,17 +407,17 @@ func renderHTML(res types.TestResult) string {
 
 		<!-- Endpoint Breakdown -->
 		<div class="table-card">
-			<h3>Endpoint Breakdown</h3>
+			<h3>Endpoint Breakdown &amp; Capacity</h3>
 			<table>
 				<thead>
 					<tr>
 						<th>Endpoint</th>
-						<th>Requests</th>
-						<th>RPS</th>
+						<th>Handled Requests</th>
+						<th>User Capacity</th>
+						<th>Throughput (RPS)</th>
 						<th>Avg Latency</th>
 						<th>P95 Latency</th>
-						<th>P99 Latency</th>
-						<th>Error Rate</th>
+						<th>Status &amp; Breaking Point</th>
 					</tr>
 				</thead>
 				<tbody>

@@ -39,6 +39,9 @@ type EndpointResult struct {
 	FailedRequests  int64          `json:"failedRequests"`
 	ErrorRate       float64        `json:"errorRate"` // percentage 0-100
 	RPS             float64        `json:"rps"`
+	MaxUsers        int            `json:"maxUsers"`        // Peak concurrent users handled by this endpoint
+	BreakingUsers   int            `json:"breakingUsers"`   // Concurrency level where this endpoint started failing (0 if survived)
+	StatusLabel     string         `json:"statusLabel"`     // Human readable verdict: "Crashed at X users", "Stable up to X users", "Server Unreachable"
 	Latency         LatencyStats   `json:"latency"`
 	StatusCodes     map[int]int64  `json:"statusCodes"`
 	Errors          map[string]int `json:"errors"`

@@ -110,7 +110,10 @@ func (s *Server) handleEvents(w http.ResponseWriter, r *http.Request) {
 }
 
 type OneClickStartRequest struct {
-	BaseURL string `json:"baseUrl"` // e.g. "http://localhost:5000"
+	BaseURL     string `json:"baseUrl"` // e.g. "http://localhost:5000"
+	URL         string `json:"url"`     // alias for baseUrl
+	Duration    string `json:"duration,omitempty"`
+	Concurrency int    `json:"concurrency,omitempty"`
 }
 
 // Common REST API route candidates to discover and stress-test automatically
@@ -152,6 +155,9 @@ func (s *Server) handleStart(w http.ResponseWriter, r *http.Request) {
 	_ = json.NewDecoder(r.Body).Decode(&req)
 
 	baseURL := strings.TrimRight(strings.TrimSpace(req.BaseURL), "/")
+	if baseURL == "" && req.URL != "" {
+		baseURL = strings.TrimRight(strings.TrimSpace(req.URL), "/")
+	}
 	if baseURL == "" {
 		baseURL = "http://localhost:5000"
 	}
@@ -185,7 +191,15 @@ func (s *Server) handleStart(w http.ResponseWriter, r *http.Request) {
 	cfg.Name = "Autonomous All-API Stress Test"
 	cfg.Endpoints = endpoints
 	cfg.Duration = 60 * time.Second
+	if req.Duration != "" {
+		if d, err := time.ParseDuration(req.Duration); err == nil && d > 0 {
+			cfg.Duration = d
+		}
+	}
 	cfg.Concurrency = 200 // Max capacity ceiling
+	if req.Concurrency > 0 {
+		cfg.Concurrency = req.Concurrency
+	}
 	cfg.Pattern = types.PatternBreakToCrash
 	cfg.Stress = types.StressConfig{
 		Enabled:               true,

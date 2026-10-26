@@ -19,6 +19,7 @@ export interface ThresholdConfig {
 
 export interface LoadTestOptions {
   name?: string;
+  baseUrl?: string;
   url?: string;
   method?: string;
   headers?: Record<string, string>;
@@ -27,7 +28,10 @@ export interface LoadTestOptions {
   duration?: string;
   concurrency?: number;
   targetRps?: number;
-  pattern?: 'constant' | 'ramp' | 'spike' | 'step';
+  pattern?: 'constant' | 'ramp' | 'spike' | 'step' | 'break-to-crash';
+  breakUntilCrash?: boolean;
+  stepConcurrency?: number;
+  crashThreshold?: number;
   thresholds?: ThresholdConfig;
   circuitBreaker?: {
     enabled?: boolean;
@@ -67,5 +71,14 @@ export interface TestResult {
   }>;
 }
 
+export interface DiscoveredRoute {
+  name: string;
+  path: string;
+  method: string;
+}
+
 export function runLoadTest(options: LoadTestOptions): Promise<TestResult>;
+export function autoTest(app: any, options?: LoadTestOptions): Promise<TestResult>;
+export function extractRoutes(app: any): DiscoveredRoute[];
+export function loadtestMiddleware(appOrOptions?: any): (req: any, res: any, next: any) => void;
 export function resolveBinary(): string;
