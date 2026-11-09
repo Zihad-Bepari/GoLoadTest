@@ -10,6 +10,12 @@
 
 ---
 
+> 📘 **Quick Implementation & Integration Guide:**  
+> Looking for step-by-step installation commands, code integration examples for **Go**, **Express/Node.js**, **NestJS**, or **PHP/Laravel**, configuration schema tables, and production deployment instructions (Docker, VPS, cPanel LiteSpeed)?  
+> 🔗 **[Click here to open the full Project Setup & Integration Guide (PROJECT-SETUP.md)](PROJECT-SETUP.md)**
+
+---
+
 ## 📑 Table of Contents
 
 - [Introduction](#-introduction)
@@ -329,11 +335,23 @@ The following metrics represent verified production test results executed agains
 
 ---
 
-## 📖 Implementation Guide
+## 📖 Implementation & Setup Guide
 
-For complete, step-by-step instructions on installing, configuring, and integrating GoLoadTest in **Go**, **Node.js/Express**, **NestJS**, or **PHP/Laravel**, please see:
+For practical, step-by-step installation instructions, framework integration, code examples, and deployment configurations, refer to the dedicated **[PROJECT-SETUP.md](PROJECT-SETUP.md)** guide:
 
-👉 **[PROJECT-SETUP.md](PROJECT-SETUP.md)**
+| Section in `PROJECT-SETUP.md` | What It Covers |
+| :--- | :--- |
+| **[1. Prerequisites & CLI Setup](PROJECT-SETUP.md#1-prerequisites--binary-installation)** | Pre-compiled cross-platform binaries (Linux AMD64/ARM64, macOS, Windows) & building from source |
+| **[2. CLI Usage Reference](PROJECT-SETUP.md#2-cli-usage-reference)** | `goloadtest run`, `goloadtest ui` (embedded Web Studio), `goloadtest init`, SLA flags |
+| **[3. Go Native Library](PROJECT-SETUP.md#3-go-native-library-integration)** | Native `goloadtest.Run()`, Gin/Chi/Fiber test harnesses, CI/CD regression testing |
+| **[4. Node.js & Express](PROJECT-SETUP.md#4-nodejs--express-integration)** | `loadtestMiddleware()` 1-click dashboard, automatic router introspection, programmatic API |
+| **[5. NestJS Integration](PROJECT-SETUP.md#5-nestjs-integration)** | `GoLoadTestModule`, `GoLoadTestService` dependency injection, and E2E test controllers |
+| **[6. PHP & Laravel](PROJECT-SETUP.md#6-php--laravel-integration)** | `php artisan test:load` command, automatic route discovery, programmatic execution |
+| **[7. Configuration Reference](PROJECT-SETUP.md#7-complete-configuration-reference)** | Complete property table for `loadtest.json` and Go/Node/PHP config options |
+| **[8. Production Deployment](PROJECT-SETUP.md#8-production--deployment-guidelines)** | Multi-stage Dockerfile, Linux VPS Systemd/Nginx, cPanel/CloudLinux/LiteSpeed optimizations |
+| **[9. Troubleshooting & FAQ](PROJECT-SETUP.md#9-troubleshooting--faqs)** | Common socket exhaustion fixes, LiteSpeed timeout prevention, permissions |
+
+👉 **[Read the complete Project Setup & Integration Guide (PROJECT-SETUP.md)](PROJECT-SETUP.md)**
 
 ---
 
