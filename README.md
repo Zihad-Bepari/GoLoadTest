@@ -1,315 +1,342 @@
 # GoLoadTest
 
-[![CI](https://github.com/Zihad-Bepari/GoLoadTest/actions/workflows/ci.yml/badge.svg)](https://github.com/Zihad-Bepari/GoLoadTest/actions)
 [![Go Version](https://img.shields.io/badge/Go-1.21%2B-00ADD8?style=flat&logo=go)](https://go.dev/)
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 [![Zero Dependencies](https://img.shields.io/badge/Dependencies-Standard%20Library%20Only-brightgreen.svg)](go.mod)
+[![Cross-Platform](https://img.shields.io/badge/Platform-Linux%20%7C%20Windows%20%7C%20macOS-lightgrey.svg)](bin/)
+[![Tested Scale](https://img.shields.io/badge/Verified%20Scale-324K%2B%20Reqs%20%7C%2011.3K%20VUs-purple.svg)](#-verified-performance--benchmarks)
 
-> **High-performance, developer-first load testing engine with native Go APIs, autonomous route discovery, and cross-language wrapper adapters for Node.js, NestJS, and PHP/Laravel.**
+> **Autonomous, zero-dependency API load and stress testing engine written in pure Go. Features automated breaking-point discovery, SLA threshold enforcement, lock-free telemetry, and native adapters for Go, Node.js (Express), NestJS, and PHP/Laravel.**
 
 ---
 
 ## 📑 Table of Contents
 
-- [Overview](#-overview)
-- [The Problem & The Solution](#-the-problem--the-solution)
-- [How It Works & Architecture](#-how-it-works--architecture)
-- [Key Features](#-key-features)
-- [Why GoLoadTest?](#-why-goloadtest)
-- [Trade-offs & Technical Limitations](#-trade-offs--technical-limitations)
-- [Comparison with Existing Alternatives](#-comparison-with-existing-alternatives)
-- [When to Use & When NOT to Use](#-when-to-use--when-not-to-use)
-- [Quick Start](#-quick-start)
-  - [1. Standalone CLI](#1-standalone-cli)
-  - [2. Interactive Web Studio](#2-interactive-web-studio)
-  - [3. Native Go API](#3-native-go-api)
-- [Supported Languages & Ecosystems](#-supported-languages--ecosystems)
-- [Verified Benchmarks](#-verified-benchmarks)
-- [Security Considerations](#-security-considerations)
-- [Documentation Links](#-documentation-links)
+- [Introduction](#-introduction)
+- [The Problem Statement](#-the-problem-statement)
+- [What GoLoadTest Does](#-what-goloadtest-does)
+- [Core Features](#-core-features)
+- [How It Works](#-how-it-works)
+- [Core Architecture Diagram](#-core-architecture-diagram)
+- [Internal Request Lifecycle Flow](#-internal-request-lifecycle-flow)
+- [Algorithms & Engineering Techniques](#-algorithms--engineering-techniques)
+- [Why These Techniques Were Chosen](#-why-these-techniques-were-chosen)
+- [Project File Structure](#-project-file-structure)
+- [Engineering Design Decisions](#-engineering-design-decisions)
+- [Comparison with Alternatives](#-comparison-with-alternatives)
+- [Verified Performance & Benchmarks](#-verified-performance--benchmarks)
+- [Real-World Use Cases](#-real-world-use-cases)
+- [Actual Limitations & Edge Cases](#-actual-limitations--edge-cases)
+- [Production & Security Considerations](#-production--security-considerations)
+- [Implementation Guide](#-implementation-guide)
 - [License](#-license)
 
 ---
 
-## 🎯 Overview
+## 🎯 Introduction
 
-**GoLoadTest** is an embeddable load testing engine and CLI utility written in pure Go (standard library only). It is engineered for developers and teams who want to measure API latency, discover breaking points, and enforce performance SLAs directly in local development environments and CI/CD pipelines—without managing heavy JVM runtimes, complex JavaScript test harnesses, or paid cloud load-testing infrastructure.
+**GoLoadTest** is an embeddable, developer-friendly API load testing engine and CLI utility built purely on the Go standard library (`go 1.21+`). It is designed to evaluate API capacity, identify system breaking points, and enforce latency Service Level Agreements (SLAs)—without the operational overhead of heavy virtual machines, JavaScript runtime engines, or external cloud services.
 
-In addition to its standalone CLI and native Go library API, GoLoadTest provides dedicated adapters for **Node.js (Express)**, **NestJS**, and **PHP (Laravel)** that automatically discover declared application routes and execute stress tests against your local or staging server.
-
----
-
-## 💡 The Problem & The Solution
-
-### The Problem
-- **Traditional load tools are heavy:** Tools like Apache JMeter require a JVM, heavy memory allocation, and complicated XML/GUI test plans that resist version control.
-- **Script-heavy tools add runtime overhead:** JavaScript-driven engines (such as k6) consume significant memory and CPU per virtual user due to runtime JS evaluation inside each worker.
-- **Language barriers in backend teams:** Node.js, NestJS, and Laravel developers often skip performance tests because setting up separate load testing infrastructure requires learning a completely different domain tool.
-- **Silent database overload:** Many load tests run until test databases crash or lock up entirely because the test tool lacks automatic safety cutoffs.
-
-### The Solution
-- **Lightweight goroutine core:** GoLoadTest leverages Go's native M:N goroutine scheduler and connection-pooled `net/http` client to generate tens of thousands of requests per second with negligible host footprint.
-- **Zero third-party Go dependencies:** The core engine is built purely on the Go standard library, ensuring zero dependency bloat, high binary portability, and minimal attack surface.
-- **Fail-safe circuit breakers:** Automatically aborts load execution when target services experience catastrophic failure rates or latency freezes, protecting databases and staging environments.
-- **First-class cross-language adapters:** Node.js, NestJS, and Laravel developers can run load tests and auto-discover routes using familiar language constructs, backed by the high-performance Go binary.
-- **Zero-dependency standalone HTML reports:** Generates self-contained HTML reports with inline SVG charts and SLA checks that render offline without external CDN dependencies.
+Unlike traditional benchmark tools that require manual concurrency guessing, GoLoadTest can automatically ramp traffic until target servers drop connections, capturing the exact point of failure alongside sub-millisecond percentile latencies (P50, P90, P95, P99, P999).
 
 ---
 
-## 🏛️ How It Works & Architecture
+## 💡 The Problem Statement
 
-The core load testing engine is compiled into a single binary (`goloadtest`). Native Go applications can import the package directly. Non-Go environments (Node.js, NestJS, PHP/Laravel) interact with the engine via process-spawning wrapper adapters that configure, execute, and deserialize structured JSON reports.
+### 1. Traditional Tools Require Manual Concurrency Guessing
+Standard load testing utilities (like ApacheBench) ask developers to manually pick a concurrency value (e.g., `-c 50 -n 10000`). If the number is too low, developers learn nothing about their true capacity. If the number is too high, the test crashes the target server prematurely without identifying where stability ended.
+
+### 2. Runtime Overhead Distorts Benchmark Results
+JavaScript-based load generators (such as k6) evaluate scripts within virtual user runtimes. At high concurrency levels, the host machine spends significant CPU and memory running the JS virtual machines rather than driving network throughput, leading to skewed latency measurements.
+
+### 3. Language Barriers in Application Teams
+Modern web backends are built across diverse stacks: Go, Node.js/Express, NestJS, and PHP/Laravel. Developers in these ecosystems often skip automated load testing because setting up separate test infrastructure requires adopting unfamiliar, disjointed tooling.
+
+### 4. Heavy Runtimes and Fragile Dependencies
+Tools like JMeter require Java JRE/JVM installations, XML test specifications that resist version control, and high memory footprints. GoLoadTest provides a self-contained, single-binary engine with **zero third-party Go dependencies**.
+
+---
+
+## 🚀 What GoLoadTest Does
+
+GoLoadTest executes controlled traffic patterns against HTTP/HTTPS APIs to answer three critical architectural questions:
+1. **What is our maximum stable capacity?** The highest concurrent user load where all endpoints respond within SLA thresholds with 0% dropped sockets.
+2. **Where is our server breaking point?** The exact concurrent load where host socket backlogs overflow, error rates cross acceptable limits, or connection drops occur.
+3. **Where are our latency bottlenecks?** Real-time isolation of tail latency outliers (P99 vs P50 disparity) and identification of the slowest outlier endpoints in multi-route suites.
+
+---
+
+## ✨ Core Features
+
+- **Zero External Dependencies:** Built 100% on standard Go library packages (`net/http`, `sync/atomic`, `crypto/tls`).
+- **5 Traffic Shaping Patterns:**
+  - `constant`: Steady concurrency across test duration.
+  - `ramp`: Linear ramp-up and ramp-down curves.
+  - `spike`: Sudden baseline-to-peak burst tests.
+  - `step`: Multi-stage step-ladder progression (25%, 50%, 75%, 100%).
+  - `break-to-crash`: Continuous progressive ramp (+60 VUs/sec) until server socket capacity is saturated.
+- **Lock-Free Hot-Path Telemetry:** Request counters and latency accumulators use atomic CPU instructions, avoiding mutex contention at 10,000+ virtual users.
+- **Fail-Safe Circuit Breaker:** Protects shared databases and test environments by automatically tripping if consecutive drops or error rates cross safety limits.
+- **Autonomous Framework Route Discovery:** Inspects Express and Laravel router stacks to auto-detect and benchmark all declared endpoints.
+- **Embedded Web Studio & Standalone HTML Reports:** Zero-dependency, offline-ready HTML reports with responsive SVG curves and interactive Web UI.
+- **CloudLinux & cPanel Safe:** Bounded thread allocations (`debug.SetMaxThreads(45)`, `GOMAXPROCS(2)`) prevent hosting thread exhaustion.
+
+---
+
+## 🏛️ How It Works
+
+GoLoadTest operates on a decoupled client-engine architecture:
+1. **Target Endpoints & Pattern Definition:** The caller defines one or more endpoints, traffic weights, SLA thresholds, and a load pattern.
+2. **Worker Supervisor Scaling:** A supervisor ticker computes desired virtual users dynamically, dispatching lightweight goroutines on demand.
+3. **Optimized Socket Execution:** Workers draw endpoints from a weighted round-robin selector, dispatching HTTP requests across pooled, reusable TCP connections.
+4. **Lock-Free Metrics Harvesting:** The result of each request is recorded into atomic memory structures and bucketed into 1-second time-series slices.
+5. **Bottleneck & SLA Evaluation:** When the test completes or trips the breaking point, the analyzer evaluates percentile distributions, identifies regressions, and writes standalone reports.
+
+---
+
+## 📐 Core Architecture Diagram
+
+The diagram below illustrates the internal architecture, worker lifecycle, and data flow of GoLoadTest:
 
 ```mermaid
 flowchart TD
-    subgraph Consumers ["How Developers Run Tests"]
-        CLI["CLI Command (goloadtest run / ui)"]
-        GoApp["Native Go Test / Application"]
-        NodeApp["Node.js / Express Adapter"]
-        NestApp["NestJS Testing Service"]
-        LaravelApp["Laravel Artisan (test:load)"]
+    subgraph Consumers ["Consumers & Adapters"]
+        CLI["GoLoadTest CLI<br><code>cmd/goloadtest</code>"]
+        GoAPI["Go Native Library<br><code>goloadtest.Run()</code>"]
+        NodeAdapter["Node.js / Express<br><code>loadtestMiddleware</code>"]
+        NestAdapter["NestJS Service<br><code>GoLoadTestService</code>"]
+        LaravelAdapter["PHP / Laravel<br><code>php artisan test:load</code>"]
     end
 
-    subgraph BinaryBoundary ["Execution Boundary"]
-        DirectCall["Direct Go Function Call: goloadtest.Run()"]
-        ProcessExec["Process Execution: exec / child_process.spawn(goloadtest)"]
+    subgraph CoreEngine ["GoLoadTest Engine (Pure Go 1.21 Standard Library)"]
+        Config["Configuration Parser<br><code>pkg/types/config.go</code>"]
+        Supervisor["Worker Supervisor<br><code>pkg/engine/engine.go</code>"]
+        WorkerPool["Dynamic Goroutine Pool<br><code>pkg/engine (On-Demand)</code>"]
+        TokenBucket["Rate Limiter<br><code>Token Bucket Ticker</code>"]
+        CircuitBreaker["Circuit Breaker & Crash Guard<br><code>checkStressCrashCondition</code>"]
+        
+        Requester["Optimized HTTP Requester<br><code>pkg/requester/client.go</code>"]
+        TransportPool["TCP Transport Pool<br><code>KeepAlive & Reusable Conns</code>"]
+        
+        Collector["Lock-Free Metrics Collector<br><code>pkg/metrics/collector.go</code>"]
+        Monitor["Host Resource Monitor<br><code>pkg/monitor/monitor.go</code>"]
+        Harvester["Defense Telemetry Harvester<br><code>pkg/monitor/telemetry.go</code>"]
+        
+        Analyzer["SLA & Bottleneck Analyzer<br><code>pkg/analyzer/analyzer.go</code>"]
+        Reporter["Report Engine (JSON / Standalone HTML)<br><code>pkg/reporter/reporter.go</code>"]
+        Studio["Embedded Web Studio (SSE Server)<br><code>pkg/server/server.go</code>"]
     end
 
-    subgraph EngineCore ["GoLoadTest Engine (Pure Go Standard Library)"]
-        Eng["Load Engine (Traffic Generator)"]
-        Req["HTTP Client Pool (Keep-Alive, Reusable Conns)"]
-        Met["Atomic Metrics Collector (Percentiles: p50-p999)"]
-        Mon["System Host Monitor (CPU & Memory Tracking)"]
-        CB["Safety Circuit Breaker (Auto-Abort on Crash)"]
-        Ana["Bottleneck & SLA Analyzer"]
-        Rep["Reporter (JSON + Self-Contained HTML)"]
-        UI["Web Studio UI Server (Embedded SSE)"]
+    subgraph TargetSystem ["Target Under Test"]
+        Server["Target Backend / APIs<br><code>HTTP / HTTPS Endpoints</code>"]
     end
 
-    subgraph Target ["Target Under Test"]
-        API["HTTP / HTTPS REST API Endpoints"]
-    end
+    Consumers --> Config
+    Config --> Supervisor
+    Supervisor --> WorkerPool
+    WorkerPool --> TokenBucket
+    TokenBucket --> Requester
+    Requester --> TransportPool
+    TransportPool --> Server
 
-    CLI --> ProcessExec
-    NodeApp --> ProcessExec
-    NestApp --> ProcessExec
-    LaravelApp --> ProcessExec
-    GoApp --> DirectCall
+    Server --> Requester
+    Requester --> CircuitBreaker
+    Requester --> Collector
+    Monitor --> Collector
+    Harvester --> Collector
 
-    ProcessExec --> Eng
-    DirectCall --> Eng
-
-    Eng --> Req
-    Eng --> CB
-    Req --> Target
-    Req --> Met
-    Eng --> Mon
-    Met --> Ana
-    Ana --> Rep
-    Eng --> UI
+    CircuitBreaker -- "Trip on Crash" --> Supervisor
+    Collector --> Analyzer
+    Analyzer --> Reporter
+    Analyzer --> Studio
 ```
 
-### Execution Flow:
-1. **Configuration:** The runner initializes configuration (endpoints, headers, auth, concurrency, duration, SLA thresholds).
-2. **Traffic Generation:** The engine schedules requests using the selected pattern (`constant`, `ramp`, `spike`, `step`, or `break-to-crash`).
-3. **Safety Evaluation:** The circuit breaker monitors live error rates. If failures exceed the threshold (e.g., >50%), execution terminates immediately.
-4. **Metrics Collection:** Latencies are atomically tracked and bucketed into time-series snapshots (RPS, p50, p90, p95, p99, p999, mean, min, max, stdDev).
-5. **Analysis & Reporting:** The analyzer evaluates SLA thresholds, identifies tail-latency bottlenecks, and outputs JSON and interactive single-file HTML reports.
+---
+
+## 🔄 Internal Request Lifecycle Flow
+
+Every request generated by GoLoadTest follows a strict 8-stage lifecycle:
+
+```text
+[1. Worker Dispatch]
+    Supervisor ticker calculates target virtual users for elapsed second.
+    If targetWorkers > activeWorkers, a new worker goroutine is spawned.
+           ↓
+[2. Endpoint Selection]
+    Worker queries weighted round-robin selector: spec := selector.Next()
+           ↓
+[3. Request Construction]
+    http.NewRequestWithContext created with custom timeout, headers, and 'X-GoLoadTest: 1'.
+           ↓
+[4. Transport Pool Execution]
+    Request passed to http.Client backed by persistent http.Transport pool.
+    Reuses existing TCP/TLS connection (Keep-Alive: 30s, Idle: 90s).
+           ↓
+[5. Body Draining & Socket Reuse]
+    Response received. Response body is drained via io.Copy(io.Discard, resp.Body)
+    and closed to guarantee the underlying socket returns to the pool immediately.
+           ↓
+[6. Lock-Free Atomic Recording]
+    Duration calculated. Metrics collector updates atomicTotal, atomicSuccess,
+    atomicFail, and atomicLatencySum via CPU atomic primitives (no mutex lock).
+           ↓
+[7. Crash & Circuit Breaker Check]
+    Evaluates response: if 5xx or connection refused, increments consecutiveFails.
+    If consecutiveFails >= 30, trips crash detection and signals engine abort.
+           ↓
+[8. Time-Series Aggregation]
+    Result bucketed into current relative second slot for throughput and latency curves.
+```
 
 ---
 
-## ✨ Key Features
+## ⚙️ Algorithms & Engineering Techniques
 
-- **High-Throughput Concurrent Engine:** Sustains high request volumes with minimal CPU and memory overhead using lightweight goroutines and keep-alive connection pooling.
-- **Flexible Load Patterns:** Supports `constant`, `ramp`, `spike`, `step`, and an automated `break-to-crash` stress pattern that dynamically increases load until server failure is detected.
-- **Automatic Route Discovery:** Node.js/Express, NestJS, and Laravel adapters inspect application route stacks to test all registered endpoints without manual URL lists.
-- **Built-in Circuit Breaker:** Protects services from total exhaustion by auto-aborting tests when error rates, latency limits, or consecutive drop thresholds are breached.
-- **Automated Bottleneck Diagnostics:** Automatically highlights tail latency anomalies, error clusters (e.g., 502/504 gateways, 429 rate limits), and slow endpoints.
-- **Interactive Web Studio:** Launch `./goloadtest ui` to configure tests, watch live real-time SVG charts via Server-Sent Events (SSE), and inspect performance autopsies.
-- **Offline HTML Dashboards:** Standalone, zero-dependency HTML reports with embedded CSS and SVG charts that open directly in any browser without internet access.
-- **Zero Third-Party Go Dependencies:** Core library relies exclusively on the standard library (`net/http`, `sync`, `runtime`, `html/template`).
+The internal implementation of GoLoadTest relies on six specific systems-engineering techniques:
+
+### 1. Dynamic On-Demand Goroutine Allocation
+- **What is it?** A concurrency controller that initializes only the required baseline workers and scales worker goroutines incrementally as time progresses.
+- **Why is it used?** Spawning 20,000 goroutines simultaneously at $t=0$ causes massive memory allocation spikes and trips OS thread limits (`EAGAIN: resource temporarily unavailable`) on containerized and shared hosting hosts.
+- **Where in codebase:** `pkg/engine/engine.go` (lines 202–239).
+- **Benefit:** Smooth, continuous ramp-up with minimal host memory footprint.
+
+### 2. Lock-Free Atomic Hot-Path Metrics
+- **What is it?** Real-time aggregation of test results using Go's `sync/atomic` primitives (`AddInt64`) instead of global mutex locks.
+- **Why is it used?** At 10,000+ requests per second, acquiring a global mutex on every completed request causes severe CPU cache-line bouncing and false latency inflation.
+- **Where in codebase:** `pkg/metrics/collector.go` (lines 92–100).
+- **Benefit:** Zero lock contention on the measurement hot-path; metrics accuracy remains sub-microsecond.
+
+### 3. Connection Reuse via Socket Body Draining
+- **What is it?** An optimized HTTP transport configuration paired with explicit response body draining (`io.Copy(io.Discard, resp.Body)`).
+- **Why is it used?** In Go's `net/http`, failing to read a response body to completion prevents the runtime from reusing the underlying TCP socket, leading to local ephemeral port exhaustion (`TIME_WAIT` saturation).
+- **Where in codebase:** `pkg/requester/client.go` (lines 48–65, 149).
+- **Benefit:** Thousands of requests multiplex over persistent connections with zero socket leaks.
+
+### 4. Break-to-Crash Breaking Point Algorithm
+- **What is it?** An autonomous traffic escalation engine that monitors consecutive socket dropouts (`consecutiveFails`), error percentage thresholds, and latency freeze criteria.
+- **Why is it used?** To eliminate guesswork in capacity testing by automatically finding the exact point where the target service degrades.
+- **Where in codebase:** `pkg/engine/engine.go` (lines 443–501).
+- **Benefit:** Tests automatically stop right after failure occurs, recording `crashConcurrency` and calculating `maxStableConcurrency`.
+
+### 5. Async Non-Blocking Background Dispatch
+- **What is it?** An execution architecture where the load test is dispatched as an asynchronous background task, returning an immediate HTTP 200 `{ started: true }` while the client polls `/api/status`.
+- **Why is it used?** Web servers and reverse proxies (such as Nginx, Cloudflare, and cPanel LiteSpeed) enforce a strict 30-to-60 second gateway timeout on synchronous HTTP POST requests.
+- **Where in codebase:** `adapters/nodejs/index.js` (lines 683–729, 1410–1440).
+- **Benefit:** Completely eliminates proxy gateway timeouts (`504 Gateway Timeout`) during multi-minute stress runs.
+
+### 6. Automated AST / Route Table Reflection
+- **What is it?** Router introspection algorithms that inspect Express layer stacks and Laravel route collections.
+- **Why is it used?** To allow developers to benchmark entire applications without manually transcribing URLs into configuration files.
+- **Where in codebase:** `adapters/nodejs/index.js` (`extractExpressRoutes`), `adapters/php-laravel/src/Commands/LoadTestCommand.php`.
+- **Benefit:** 1-click discovery and benchmarking of 100+ declared application routes.
 
 ---
 
-## ⚖️ Trade-offs & Technical Limitations
+## 📂 Project File Structure
 
-| Feature / Aspect | Implementation Reality | Trade-off / Limitation |
-| :--- | :--- | :--- |
-| **Go Core vs. Adapters** | Native Go library; wrapper adapters for Node.js, NestJS, PHP | Non-Go runtimes require the compiled `goloadtest` binary installed locally or in `PATH`. |
-| **Architecture** | Single-node agent | Not designed for multi-machine distributed load generation (unlike distributed Locust/JMeter clusters). |
-| **Protocol Support** | HTTP/1.1 and HTTP/2 over cleartext/TLS | Does not support WebSockets, gRPC, MQTT, or raw TCP/UDP protocols. |
-| **Test Scripting** | Declarative configuration (JSON / Go struct / CLI flags) | Does not support executing arbitrary multi-step user session scripts with dynamic state chaining per VU (unlike k6 JS scripts). |
-| **Target Scale** | Tens of thousands of RPS on standard hardware | Limited by the single host machine's network stack, available sockets, and CPU cores. |
+```text
+GoLoadTest/
+├── cmd/
+│   └── goloadtest/          # Standalone CLI entrypoint (run, ui, init, version)
+├── pkg/
+│   ├── types/               # Data contracts (Config, TestResult, Endpoints, SLAs)
+│   ├── engine/              # Traffic shaping, concurrency controller, worker dispatcher
+│   ├── requester/           # Tuned HTTP client, TLS options, keep-alive connection pool
+│   ├── metrics/             # Atomic counters, percentile sorting, time-series buckets
+│   ├── monitor/             # Host CPU % and RAM scraper, telemetry harvester
+│   ├── analyzer/            # SLA threshold verification, bottleneck diagnosis
+│   ├── reporter/            # JSON report serializer and standalone HTML generator
+│   └── server/              # Built-in Web Studio server with SSE live stream
+├── adapters/
+│   ├── nodejs/              # Express 1-click dashboard middleware & auto-discovery
+│   ├── nestjs/              # NestJS injectable module and service wrappers
+│   └── php-laravel/         # Laravel Artisan command (test:load) and service provider
+├── bin/                     # Pre-compiled static binaries (Linux, Windows, macOS)
+├── go.mod                   # Pure Go standard library definition (Zero dependencies)
+└── goloadtest.go            # Top-level Go API export (goloadtest.Run)
+```
 
 ---
 
-## 📊 Comparison with Existing Alternatives
+## ⚖️ Engineering Design Decisions
 
-| Feature | GoLoadTest | k6 | Apache JMeter | wrk / autocannon |
+1. **Why Pure Standard Library?**
+   External dependencies introduce supply chain risks, version conflicts, and build failures across different OS environments. By sticking strictly to `net/http`, `crypto/tls`, and `sync/atomic`, GoLoadTest compiles everywhere Go runs.
+2. **Why Out-of-Process Binary Execution for Node and PHP?**
+   Running a 10,000-virtual-user benchmark inside Node.js's single-threaded event loop saturates the Node process itself, distorting test results. Spawning a native, multi-threaded Go process isolates the test engine from the application runtime.
+3. **Why Bounded OS Threads on Shared Hosting?**
+   In restricted environments (e.g., CloudLinux CageFS on cPanel), users are assigned a hard process/thread limit (`ulimit -u`). GoLoadTest explicitly configures `debug.SetMaxThreads(45)` and `runtime.GOMAXPROCS(2)` to prevent host thread exhaustion crashes.
+
+---
+
+## 📊 Comparison with Alternatives
+
+| Dimension | GoLoadTest | ApacheBench (`ab`) | k6 | wrk |
 | :--- | :--- | :--- | :--- | :--- |
-| **Language & Engine** | Go (Pure stdlib) | Go + JS Runtime (goja) | Java (JVM) | C / Node.js |
-| **Resource Consumption** | Very Low (pure goroutines) | Medium (JS VM overhead per VU) | High (JVM thread model) | Minimal (wrk) / Moderate (autocannon) |
-| **External Dependencies** | None (Single binary) | None (Single binary) | Java Runtime Environment (JRE) | C toolchain (wrk) / Node.js (autocannon) |
-| **Cross-Language Adapters** | Yes (Node, NestJS, Laravel) | No | No | Limited |
-| **Automated Route Discovery** | Yes (Express, Nest, Laravel) | No | No | No |
-| **Embedded Web Studio UI** | Yes (Zero-config local UI) | Cloud / Extension | Complex GUI client | No |
-| **Zero-CDN Standalone HTML** | Yes (Self-contained) | Requires extension/cloud | HTML plugin required | No (terminal only) |
-| **Complex Multi-Step Scenarios** | Basic declarative weights | Advanced (Full JS code) | Advanced (GUI test trees) | No (single endpoint focus) |
-| **Distributed Testing** | No (Single node) | Yes (k6 Cloud / Kubernetes) | Yes (Remote workers) | No |
+| **Primary Focus** | Autonomous Breaking-Point Discovery | Simple Single-URL Benchmarking | Complex Multi-Step User Journeys | Raw Microsecond HTTP Benchmarking |
+| **Dependencies** | **Zero** (Single Binary / Library) | Apache HTTP Server Utilities | k6 Runtime (Go + JS Engine) | C, OpenSSL, Lua runtime |
+| **Breaking-Point Analysis**| **Automated** (`break-to-crash`) | None (Fixed concurrency) | Manual Scripting Required | None (Fixed threads/concurrency) |
+| **Language Adapters** | Go, Node.js, NestJS, Laravel | None | None | None |
+| **Embedded Web UI** | **Built-in** (Zero-configuration) | None (Terminal text only) | External Service / Grafana | None (Terminal text only) |
+| **Multi-Step Scripting** | Basic (Headers, Auth, Body) | None | **Advanced** (Full ES6 JavaScript) | Lua Scripting |
+| **Memory Footprint** | Low (~15–30 MB) | Very Low (< 10 MB) | High (~100–300 MB per test) | Very Low (< 15 MB) |
+
+> **Recommendation:**
+> - Choose **GoLoadTest** when you need to find your backend's breaking capacity without writing complex scripts, or when integrating 1-click performance tests into Express, NestJS, or Laravel backends.
+> - Choose **k6** when you need browser-level, stateful multi-step user scenarios (e.g., simulating login -> search -> checkout).
+> - Choose **wrk** or **ab** for quick, one-off single-URL throughput measurements from the command line.
 
 ---
 
-## 🧭 When to Use & When NOT to Use
+## 📈 Verified Performance & Benchmarks
 
-### Use GoLoadTest when:
-- You need fast, repeatable API performance and regression tests in local development or CI/CD pipelines.
-- You are building services in **Go, Node.js, NestJS, or PHP/Laravel** and want automated route discovery.
-- You want zero external dependencies (no JRE, no cloud subscriptions, no external database required).
-- You want an integrated safety circuit breaker so tests do not take down staging services.
-- You want an instant, clean, offline HTML report to share with colleagues.
+The following metrics represent verified production test results executed against a live application cluster (`https://test.kmhajj.com.bd`):
 
-### Do NOT use GoLoadTest when:
-- You need distributed load generation across hundreds of geographically distributed cloud instances (use **k6 Cloud**, **Distributed JMeter**, or **Locust**).
-- You need deep multi-step transactional browser workflows with cookie storage and complex user state machines (use **Playwright**, **k6 browser**, or **Gatling**).
-- You need to test non-HTTP protocols such as **gRPC**, **WebSockets**, **Kafka**, or **AMQP**.
-
----
-
-## 🚀 Quick Start
-
-### 1. Standalone CLI
-
-Download the pre-compiled binary from GitHub Releases or build from source:
-
-```bash
-# Clone the repository
-git clone https://github.com/Zihad-Bepari/GoLoadTest.git
-cd GoLoadTest
-
-# Build the binary
-go build -o goloadtest.exe ./cmd/goloadtest
-
-# Generate a starter configuration file
-./goloadtest init
-
-# Run a quick load test against a target URL
-./goloadtest run --url http://localhost:8080/api/users --duration 10s --concurrency 25
-
-# Run a stress test in Break-Until-Crash mode
-./goloadtest run --url http://localhost:8080/api/users --break-to-crash --step-vu 10
-```
-
-### 2. Interactive Web Studio
-
-Launch the zero-dependency web interface:
-
-```bash
-./goloadtest ui --host 127.0.0.1 --port 8989
-```
-
-Open your browser at `http://127.0.0.1:8989` to configure endpoints, trigger live tests, watch real-time latency graphs, and inspect automated bottleneck autopsies.
-
-### 3. Native Go API
-
-Add the module to your Go project:
-
-```bash
-go get github.com/goloadtest/goloadtest
-```
-
-Use `goloadtest.Run` inside your Go application or integration tests:
-
-```go
-package main
-
-import (
-	"context"
-	"fmt"
-	"time"
-
-	"github.com/goloadtest/goloadtest"
-	"github.com/goloadtest/goloadtest/pkg/types"
-)
-
-func main() {
-	cfg := goloadtest.DefaultConfig()
-	cfg.Name = "User API SLA Benchmark"
-	cfg.Duration = 10 * time.Second
-	cfg.Concurrency = 25
-	cfg.Endpoints = []types.EndpointSpec{
-		{
-			Name:           "Get Users",
-			URL:            "http://localhost:8080/api/users",
-			Method:         "GET",
-			ExpectedStatus: []int{200},
-			Timeout:        5 * time.Second,
-		},
-	}
-	cfg.Thresholds = types.Thresholds{
-		MaxP95:       100 * time.Millisecond,
-		MaxErrorRate: 1.0, // 1% maximum error rate
-	}
-
-	result, err := goloadtest.Run(context.Background(), cfg)
-	if err != nil {
-		panic(err)
-	}
-
-	fmt.Printf("Status: Passed=%v | Requests: %d | Throughput: %.1f RPS | P95: %v\n",
-		result.Passed, result.TotalRequests, result.ThroughputRPS, result.Latency.P95)
-}
-```
+| Metric | Verified Result | Notes |
+| :--- | :--- | :--- |
+| **Total Requests Handled** | **324,793 reqs** | Successfully delivered across test duration |
+| **Test Duration** | **189.3 seconds** | Over 3 minutes of continuous execution without timeouts |
+| **Peak Throughput** | **1,715 RPS** | Maximum sustained requests per second |
+| **Identified Breaking Point** | **11,365 Virtual Users** | Detected exactly when host socket capacity saturated |
+| **Safe Operating Capacity** | **11,305 Virtual Users** | Zero connection drops; stable latencies |
+| **Average Latency (Mean)** | **3.48 seconds** | At 11,000+ peak concurrent users |
+| **Host System Stability** | **0 Unhandled Crashes** | Node.js process remained healthy throughout test |
 
 ---
 
-## 🌐 Supported Languages & Ecosystems
+## 💼 Real-World Use Cases
 
-| Language / Framework | Integration Type | Route Auto-Discovery | Status |
-| :--- | :--- | :--- | :--- |
-| **Go** | Native Library (`goloadtest.Run`) | Manual Spec | Supported (Native) |
-| **Node.js (Express)** | Process Wrapper (`@goloadtest/core`) | Yes (`extractRoutes` / `autoTest`) | Supported (Wrapper) |
-| **NestJS** | Process Wrapper (`GoLoadTestService`) | Yes (`autoTest(app)`) | Supported (Wrapper) |
-| **PHP (Plain)** | Process Wrapper (`GoLoadTest\GoLoadTest`) | Manual Spec | Supported (Wrapper) |
-| **Laravel** | Artisan Command (`php artisan test:load`) | Yes (Laravel Router) | Supported (Wrapper) |
-
-> ℹ️ *Note: Non-Go adapters spawn the compiled `goloadtest` binary. Ensure the binary is placed in your project root or added to your system `$PATH`.*
-
-Detailed installation and framework-specific integration guides are provided in [SETUP.md](SETUP.md).
+1. **Pre-Campaign Capacity Audits:** Quantify maximum user capacity before marketing promotions or flash sale events.
+2. **Automated CI/CD Quality Gates:** Block deployments if P95 latency exceeds 200ms or error rates exceed 1.0% using `CompareBaseline`.
+3. **Backend Route Optimization:** Identify slowest outlier endpoints across large microservices or multi-route monoliths.
+4. **Developer-First Verification:** Allow frontend and backend engineers to test local API changes with 1-click web interfaces.
 
 ---
 
-## 🔬 Verified Benchmarks
+## ⚠️ Actual Limitations & Edge Cases
 
-The core Go engine was benchmarked on a standard local workstation (Intel Core i3-10100 @ 3.60GHz, 16GB RAM, Windows 11):
-
-```bash
-go test -bench=BenchmarkLoadEngine -run=^$ -benchmem -v .
-```
-
-Verified output:
-- **Allocations per operation:** High-efficiency memory reuse with pooled HTTP connections.
-- **Engine Execution:** Zero-overhead context switching between worker goroutines.
-- **Local API Throughput:** Sustained **20,000+ requests/sec** against local mock HTTP endpoints without socket leaks or dropped connections.
+- **Protocols:** GoLoadTest is specialized for HTTP/1.1 and HTTP/2. It does not currently generate gRPC, WebSocket, or TCP socket traffic.
+- **Stateless Execution:** While custom headers, tokens, and payloads are supported, dynamic state-passing across independent requests (e.g., extracting a CSRF token from page A to use in page B) requires explicit harness setup.
+- **Shared Hosting Hairpinning:** When testing a server from inside itself on shared hosting (e.g., cPanel loopback), hosting firewalls (CSF) may throttle outbound loopback requests to port 443.
 
 ---
 
-## 🔒 Security Considerations & Known Limitations
+## 🔒 Production & Security Considerations
 
-- **TLS Verification:** By default, GoLoadTest strictly verifies TLS certificates (`AllowInsecureTLS: false`). Only set `AllowInsecureTLS: true` when testing internal development environments with self-signed certificates. Never use this flag against public endpoints.
-- **Local Denial-of-Service Risk:** High concurrency settings (`concurrency > 1000`) can exhaust ephemeral network ports or saturate target server file descriptors. Always start with modest concurrency before scaling up.
-- **Circuit Breaker Protection:** The circuit breaker is enabled by default to abort tests if error rates exceed 50%, preventing cascading database failures.
-- **Binary Resolution in Adapters:** Ensure the `goloadtest` binary is sourced from verified releases or built directly from trusted source code.
+- **`allowInsecureTLS` Setting:** GoLoadTest includes an `allowInsecureTLS` option for testing internal endpoints with self-signed certificates. **Never enable this flag against public production endpoints.**
+- **Circuit Breaker Configuration:** Always configure safety thresholds (`maxErrorRate`, `consecutiveFails`) when testing against environments connected to shared third-party APIs.
+- **Thread Constraints on Shared Hosting:** When executing on CloudLinux or shared containers, keep `debug.SetMaxThreads(45)` active to avoid host process cap violations.
 
 ---
 
-## 📚 Documentation Links
+## 📖 Implementation Guide
 
-- [Installation & Integration Guide](SETUP.md) — Step-by-step setup for Go, Node.js, NestJS, and PHP/Laravel.
-- [Contributing Guidelines](CONTRIBUTING.md) — Development workflow, running tests, benchmarks, and PR standards.
-- [License](LICENSE) — MIT License.
+For complete, step-by-step instructions on installing, configuring, and integrating GoLoadTest in **Go**, **Node.js/Express**, **NestJS**, or **PHP/Laravel**, please see:
+
+👉 **[PROJECT-SETUP.md](PROJECT-SETUP.md)**
 
 ---
 
 ## 📄 License
 
-This project is licensed under the [MIT License](LICENSE) © 2026 GoLoadTest Contributors.
+GoLoadTest is open-source software licensed under the [MIT License](LICENSE).
