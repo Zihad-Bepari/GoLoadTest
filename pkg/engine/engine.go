@@ -28,6 +28,7 @@ type ProgressSnapshot struct {
 	ActiveWorkers  int
 	CircuitTripped bool
 	AbortReason    string
+	Telemetry      types.ServerTelemetry
 }
 
 // Engine drives the execution of concurrent load generation.
@@ -35,6 +36,7 @@ type Engine struct {
 	cfg        types.Config
 	client     *requester.Client
 	collector  *metrics.Collector
+	harvester  *monitor.TelemetryHarvester
 	onProgress func(ProgressSnapshot)
 
 	// Runtime state
@@ -81,10 +83,23 @@ func New(cfg types.Config) *Engine {
 	client := requester.NewClient(15*time.Second, cfg.Concurrency*2, cfg.AllowInsecureTLS)
 	collector := metrics.NewCollector(cfg.Endpoints)
 
+	targetBase := cfg.BaseURL
+	if targetBase == "" && len(cfg.Endpoints) > 0 {
+		u := cfg.Endpoints[0].URL
+		if strings.HasPrefix(u, "http://") || strings.HasPrefix(u, "https://") {
+			parts := strings.SplitN(u, "/", 4)
+			if len(parts) >= 3 {
+				targetBase = parts[0] + "//" + parts[2]
+			}
+		}
+	}
+	harvester := monitor.NewTelemetryHarvester(targetBase)
+
 	return &Engine{
 		cfg:       cfg,
 		client:    client,
 		collector: collector,
+		harvester: harvester,
 	}
 }
 
@@ -109,6 +124,10 @@ func (e *Engine) Run(parentCtx context.Context) (types.TestResult, error) {
 	defer cancel()
 
 	e.collector.Start()
+	if e.harvester != nil {
+		e.harvester.Start(ctx)
+		defer e.harvester.Stop()
+	}
 	startTime := time.Now()
 
 	// Rate limiter channel if TargetRPS is set
@@ -160,9 +179,35 @@ func (e *Engine) Run(parentCtx context.Context) (types.TestResult, error) {
 	}
 	atomic.StoreInt64(&e.desiredWorkers, int64(initialDesired))
 
-	// Worker supervisor: periodically updates desiredWorkers atomically
+	// Dynamically managed worker pool
+	var spawnedWorkers int64
+	var spawnMu sync.Mutex
+
+	spawnWorker := func(id int) {
+		wg.Add(1)
+		go func(workerID int) {
+			defer wg.Done()
+			e.runWorker(workerCtx, workerID, selector, rpsCh)
+		}(id)
+	}
+
+	initCount := initialDesired
+	if initCount > maxWorkers {
+		initCount = maxWorkers
+	}
+	if initCount < 1 {
+		initCount = 1
+	}
+
+	// Spawn initial workers on-demand
+	for i := 0; i < initCount; i++ {
+		spawnWorker(i)
+	}
+	atomic.StoreInt64(&spawnedWorkers, int64(initCount))
+
+	// Worker supervisor: periodically updates desiredWorkers and dynamically scales workers
 	go func() {
-		ticker := time.NewTicker(200 * time.Millisecond)
+		ticker := time.NewTicker(150 * time.Millisecond)
 		defer ticker.Stop()
 
 		for {
@@ -178,19 +223,20 @@ func (e *Engine) Run(parentCtx context.Context) (types.TestResult, error) {
 
 				desired := e.calculateDesiredWorkers(elapsed, maxWorkers)
 				atomic.StoreInt64(&e.desiredWorkers, int64(desired))
+
+				// Dynamically spawn new workers only when required
+				spawnMu.Lock()
+				current := int(atomic.LoadInt64(&spawnedWorkers))
+				if desired > current && current < maxWorkers {
+					for i := current; i < desired && i < maxWorkers; i++ {
+						spawnWorker(i)
+						atomic.AddInt64(&spawnedWorkers, 1)
+					}
+				}
+				spawnMu.Unlock()
 			}
 		}
 	}()
-
-	// Spawn initial pool of workers
-	for i := 0; i < maxWorkers; i++ {
-		wg.Add(1)
-		workerID := i
-		go func() {
-			defer wg.Done()
-			e.runWorker(workerCtx, workerID, selector, rpsCh)
-		}()
-	}
 
 	// Start system monitor if enabled
 	mon := monitor.New(e.cfg.Monitor, e.collector)
@@ -204,6 +250,10 @@ func (e *Engine) Run(parentCtx context.Context) (types.TestResult, error) {
 	result := e.collector.Stop()
 	result.SuiteName = e.cfg.Name
 	result.System = mon.Stop()
+	if e.harvester != nil {
+		finalTelem := e.harvester.Snapshot()
+		result.DefenseTelemetry = &finalTelem
+	}
 
 	if atomic.LoadInt32(&e.aborted) == 1 {
 		result.Aborted = true
@@ -283,15 +333,15 @@ func (e *Engine) calculateDesiredWorkers(elapsed time.Duration, maxWorkers int) 
 		stress := e.cfg.Stress
 		initial := stress.InitialConcurrency
 		if initial <= 0 {
-			initial = 5
+			initial = 25
 		}
 		step := stress.StepConcurrency
 		if step <= 0 {
-			step = 10
+			step = 60
 		}
 		interval := stress.StepInterval
 		if interval <= 0 {
-			interval = 2 * time.Second
+			interval = 1 * time.Second
 		}
 		stepCount := int(elapsed / interval)
 		targetWorkers := initial + (stepCount * step)
@@ -377,6 +427,9 @@ func (e *Engine) runWorker(
 			currentWorkers = 1
 		}
 		e.collector.RecordWithWorkers(record, currentWorkers)
+		if e.harvester != nil {
+			e.harvester.RecordResponse(record.StatusCode, false)
+		}
 
 		// Check circuit breaker or crash condition
 		if e.cfg.Pattern == types.PatternBreakToCrash || e.cfg.Stress.Enabled {
@@ -415,9 +468,9 @@ func (e *Engine) checkStressCrashCondition(rec requester.ResponseRecord) {
 	var reason string
 	if fails >= int64(crashFails) {
 		if strings.Contains(rec.ErrorMessage, "actively refused") || strings.Contains(rec.ErrorMessage, "connection refused") {
-			reason = fmt.Sprintf("Target server is offline or unreachable (%s)", rec.ErrorMessage)
+			reason = fmt.Sprintf("Target server connection capacity reached (%s)", rec.ErrorMessage)
 		} else {
-			reason = fmt.Sprintf("Server crashed or unreachable: %d consecutive failed/dropped requests", fails)
+			reason = fmt.Sprintf("Server capacity reached: %d consecutive failed/dropped requests", fails)
 		}
 	} else if total >= 50 && errRate >= crashErrorRate {
 		reason = fmt.Sprintf("Server failure threshold reached: Error rate at %.1f%% (threshold %.1f%%)", errRate, crashErrorRate)
@@ -523,6 +576,11 @@ func (e *Engine) runProgressMonitor(ctx context.Context, startTime time.Time, do
 			reason := e.abortReason
 			e.abortMu.Unlock()
 
+			var telem types.ServerTelemetry
+			if e.harvester != nil {
+				telem = e.harvester.Snapshot()
+			}
+
 			if e.onProgress != nil {
 				e.onProgress(ProgressSnapshot{
 					Elapsed:        now.Sub(startTime),
@@ -536,6 +594,7 @@ func (e *Engine) runProgressMonitor(ctx context.Context, startTime time.Time, do
 					ActiveWorkers:  active,
 					CircuitTripped: isAborted,
 					AbortReason:    reason,
+					Telemetry:      telem,
 				})
 			}
 		}

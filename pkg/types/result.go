@@ -109,6 +109,7 @@ type TestResult struct {
 	Passed          bool                   `json:"passed"`
 	Bottlenecks     []BottleneckInsight    `json:"bottlenecks"`
 	BreakingPoint   *BreakingPointInfo     `json:"breakingPoint,omitempty"`
+	DefenseTelemetry *ServerTelemetry      `json:"defenseTelemetry,omitempty"`
 	Aborted         bool                   `json:"aborted"`
 	AbortReason     string                 `json:"abortReason,omitempty"`
 }

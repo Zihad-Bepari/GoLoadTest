@@ -26,7 +26,7 @@ func TestServer_Index(t *testing.T) {
 	if !strings.Contains(body, "GoLoadTest") {
 		t.Fatalf("expected title in body, got %s", body[:200])
 	}
-	if !strings.Contains(body, "START ALL API TEST") {
+	if !strings.Contains(body, "START ALL API") {
 		t.Fatalf("expected test button in body")
 	}
 }

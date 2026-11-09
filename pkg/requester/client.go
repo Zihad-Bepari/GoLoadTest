@@ -122,6 +122,7 @@ func (c *Client) Execute(ctx context.Context, spec types.EndpointSpec) ResponseR
 	if req.Header.Get("User-Agent") == "" {
 		req.Header.Set("User-Agent", "GoLoadTest/1.0 (Cross-Language Load Tester)")
 	}
+	req.Header.Set("X-GoLoadTest", "1")
 	if spec.Body != "" && req.Header.Get("Content-Type") == "" {
 		req.Header.Set("Content-Type", "application/json")
 	}
