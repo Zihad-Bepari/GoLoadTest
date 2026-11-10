@@ -1,17 +1,14 @@
 # Binaries
-*.exe
 *.exe~
 *.dll
 *.so
 *.dylib
-bin/
+/bin/
 dist/
 goloadtest
-
-# Test results and temporary files
+!adapters/nodejs/bin/*
+!*.json
 results/
-*.json
-!loadtest.json
 *.html
 *.log
 

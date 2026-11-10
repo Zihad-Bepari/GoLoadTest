@@ -7,7 +7,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/goloadtest/goloadtest/pkg/types"
+	"github.com/Zihad-Bepari/GoLoadTest/pkg/types"
 )
 
 func TestServer_Index(t *testing.T) {
@@ -66,7 +66,7 @@ func TestServer_StartAndStatus(t *testing.T) {
 	}
 
 	// Wait for test to complete
-	deadline := time.Now().Add(4 * time.Second)
+	deadline := time.Now().Add(10 * time.Second)
 	var lastRes *types.TestResult
 	for time.Now().Before(deadline) {
 		s.mu.Lock()

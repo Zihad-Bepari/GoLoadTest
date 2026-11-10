@@ -9,10 +9,10 @@ import (
 	"sync"
 	"time"
 
-	"github.com/goloadtest/goloadtest/pkg/analyzer"
-	"github.com/goloadtest/goloadtest/pkg/engine"
-	"github.com/goloadtest/goloadtest/pkg/reporter"
-	"github.com/goloadtest/goloadtest/pkg/types"
+	"github.com/Zihad-Bepari/GoLoadTest/pkg/analyzer"
+	"github.com/Zihad-Bepari/GoLoadTest/pkg/engine"
+	"github.com/Zihad-Bepari/GoLoadTest/pkg/reporter"
+	"github.com/Zihad-Bepari/GoLoadTest/pkg/types"
 )
 
 // Server coordinates the simple 1-click test runner & live dashboard.

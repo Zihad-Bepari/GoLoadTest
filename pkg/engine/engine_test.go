@@ -8,7 +8,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/goloadtest/goloadtest/pkg/types"
+	"github.com/Zihad-Bepari/GoLoadTest/pkg/types"
 )
 
 func TestEngine_Run_Success(t *testing.T) {

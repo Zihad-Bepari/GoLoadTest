@@ -13,11 +13,18 @@ class GoLoadTest
     {
         $isWindows = strtoupper(substr(PHP_OS, 0, 3)) === 'WIN';
         $binaryName = $isWindows ? 'goloadtest.exe' : 'goloadtest';
+        $arch = in_array(php_uname('m'), ['aarch64', 'arm64']) ? 'arm64' : 'amd64';
+        $targetBinary = $isWindows ? 'goloadtest-windows-amd64.exe' : (PHP_OS_FAMILY === 'Darwin' ? "goloadtest-darwin-{$arch}" : "goloadtest-linux-{$arch}");
 
         $candidates = [
             getcwd() . DIRECTORY_SEPARATOR . $binaryName,
+            getcwd() . DIRECTORY_SEPARATOR . 'bin' . DIRECTORY_SEPARATOR . $targetBinary,
             dirname(__DIR__, 2) . DIRECTORY_SEPARATOR . $binaryName,
+            dirname(__DIR__, 2) . DIRECTORY_SEPARATOR . 'bin' . DIRECTORY_SEPARATOR . $targetBinary,
+            dirname(__DIR__, 2) . DIRECTORY_SEPARATOR . 'bin' . DIRECTORY_SEPARATOR . $binaryName,
             dirname(__DIR__, 4) . DIRECTORY_SEPARATOR . $binaryName,
+            dirname(__DIR__, 4) . DIRECTORY_SEPARATOR . 'bin' . DIRECTORY_SEPARATOR . $targetBinary,
+            dirname(__DIR__, 4) . DIRECTORY_SEPARATOR . 'bin' . DIRECTORY_SEPARATOR . $binaryName,
         ];
 
         foreach ($candidates as $candidate) {

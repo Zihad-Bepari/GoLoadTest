@@ -11,8 +11,8 @@ import (
 	"sync"
 	"time"
 
-	rmetrics "github.com/goloadtest/goloadtest/pkg/metrics"
-	"github.com/goloadtest/goloadtest/pkg/types"
+	rmetrics "github.com/Zihad-Bepari/GoLoadTest/pkg/metrics"
+	"github.com/Zihad-Bepari/GoLoadTest/pkg/types"
 )
 
 // Monitor collects system resources (CPU, RAM) during test execution.

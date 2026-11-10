@@ -1,3 +1,3 @@
-module github.com/goloadtest/goloadtest
+module github.com/Zihad-Bepari/GoLoadTest
 
 go 1.21

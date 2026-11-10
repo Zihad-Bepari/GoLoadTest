@@ -1,0 +1,21 @@
+{
+  "name": "goloadtest/goloadtest-php",
+  "description": "PHP and Laravel adapter for GoLoadTest - high performance API testing engine",
+  "type": "library",
+  "license": "MIT",
+  "autoload": {
+    "psr-4": {
+      "GoLoadTest\\": "src/"
+    }
+  },
+  "extra": {
+    "laravel": {
+      "providers": [
+        "GoLoadTest\\GoLoadTestServiceProvider"
+      ]
+    }
+  },
+  "require": {
+    "php": ">=7.4|^8.0|^8.1|^8.2|^8.3"
+  }
+}

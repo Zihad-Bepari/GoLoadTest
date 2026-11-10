@@ -34,8 +34,6 @@ function resolveBinary() {
     path.resolve(process.cwd(), targetBinary),
     path.resolve(process.cwd(), genericBinary),
     path.resolve(process.cwd(), '..', genericBinary),
-    'C:\\2026\\GoLoadTest\\goloadtest.exe',
-    'C:\\2026\\GoLoadTest\\bin\\' + targetBinary
   ];
 
   for (const candidate of localCandidates) {

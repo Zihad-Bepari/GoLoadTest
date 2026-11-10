@@ -3,10 +3,10 @@ package goloadtest
 import (
 	"context"
 
-	"github.com/goloadtest/goloadtest/pkg/analyzer"
-	"github.com/goloadtest/goloadtest/pkg/engine"
-	"github.com/goloadtest/goloadtest/pkg/reporter"
-	"github.com/goloadtest/goloadtest/pkg/types"
+	"github.com/Zihad-Bepari/GoLoadTest/pkg/analyzer"
+	"github.com/Zihad-Bepari/GoLoadTest/pkg/engine"
+	"github.com/Zihad-Bepari/GoLoadTest/pkg/reporter"
+	"github.com/Zihad-Bepari/GoLoadTest/pkg/types"
 )
 
 // Re-export common types for seamless developer experience.

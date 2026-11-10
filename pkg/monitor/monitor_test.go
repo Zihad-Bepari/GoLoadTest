@@ -5,8 +5,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/goloadtest/goloadtest/pkg/metrics"
-	"github.com/goloadtest/goloadtest/pkg/types"
+	"github.com/Zihad-Bepari/GoLoadTest/pkg/metrics"
+	"github.com/Zihad-Bepari/GoLoadTest/pkg/types"
 )
 
 func TestMonitor_StartStop(t *testing.T) {

@@ -4,7 +4,7 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/goloadtest/goloadtest/pkg/types"
+	"github.com/Zihad-Bepari/GoLoadTest/pkg/types"
 )
 
 // Analyze processes a TestResult, evaluates thresholds, and generates diagnostic bottleneck insights.

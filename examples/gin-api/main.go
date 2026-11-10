@@ -7,8 +7,8 @@ import (
 	"sync/atomic"
 	"time"
 
-	"github.com/goloadtest/goloadtest"
-	"github.com/goloadtest/goloadtest/pkg/types"
+	"github.com/Zihad-Bepari/GoLoadTest"
+	"github.com/Zihad-Bepari/GoLoadTest/pkg/types"
 )
 
 func main() {

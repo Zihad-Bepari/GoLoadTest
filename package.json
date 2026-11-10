@@ -1,0 +1,32 @@
+{
+  "name": "goloadtest",
+  "version": "1.0.0",
+  "description": "Cross-platform high-performance API load and stress testing engine with 1-click Express and NestJS dashboard",
+  "main": "adapters/nodejs/index.js",
+  "types": "adapters/nodejs/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./adapters/nodejs/index.d.ts",
+      "default": "./adapters/nodejs/index.js"
+    },
+    "./nestjs": {
+      "types": "./adapters/nestjs/goloadtest.module.ts",
+      "default": "./adapters/nodejs/index.js"
+    }
+  },
+  "keywords": [
+    "loadtest",
+    "load-testing",
+    "stress-testing",
+    "performance",
+    "benchmark",
+    "express",
+    "nestjs"
+  ],
+  "author": "Zihad Bepari",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/Zihad-Bepari/GoLoadTest.git"
+  }
+}

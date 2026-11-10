@@ -8,7 +8,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/goloadtest/goloadtest/pkg/types"
+	"github.com/Zihad-Bepari/GoLoadTest/pkg/types"
 )
 
 // SaveResults writes JSON and HTML reports based on configuration.

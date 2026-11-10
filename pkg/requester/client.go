@@ -11,7 +11,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/goloadtest/goloadtest/pkg/types"
+	"github.com/Zihad-Bepari/GoLoadTest/pkg/types"
 )
 
 // ResponseRecord holds the outcome of a single request execution.

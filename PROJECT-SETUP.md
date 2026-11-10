@@ -6,6 +6,7 @@ This guide provides end-to-end instructions for installing, configuring, integra
 
 ## 📑 Table of Contents
 
+- [Supported Platforms & Installation Summary](#supported-platforms--installation-summary)
 - [1. Prerequisites & Binary Installation](#1-prerequisites--binary-installation)
   - [Pre-Compiled Binaries](#pre-compiled-binaries)
   - [Building from Source](#building-from-source)
@@ -14,19 +15,20 @@ This guide provides end-to-end instructions for installing, configuring, integra
   - [Run Tests via CLI](#run-tests-via-cli)
   - [Launch Embedded Web Studio](#launch-embedded-web-studio)
 - [3. Go Native Library Integration](#3-go-native-library-integration)
-  - [Installation](#installation)
+  - [Go Installation](#go-installation)
   - [Standard Usage Example](#standard-usage-example)
   - [Gin / Chi / Fiber Test Example](#gin--chi--fiber-test-example)
   - [Automated SLA Regression Gate (CI/CD)](#automated-sla-regression-gate-cicd)
 - [4. Node.js & Express Integration](#4-nodejs--express-integration)
-  - [Installation](#installation-1)
-  - [1-Click Interactive Dashboard Middleware](#1-click-interactive-dashboard-middleware)
+  - [Node.js Installation](#nodejs-installation)
+  - [1-Click Interactive Dashboard Middleware (`app.js`)](#1-click-interactive-dashboard-middleware-appjs)
   - [Programmatic API Execution](#programmatic-api-execution)
 - [5. NestJS Integration](#5-nestjs-integration)
+  - [NestJS Installation](#nestjs-installation)
   - [Module Setup](#module-setup)
   - [Service Injection & Controller Usage](#service-injection--controller-usage)
 - [6. PHP & Laravel Integration](#6-php--laravel-integration)
-  - [Installation](#installation-2)
+  - [PHP / Laravel Installation](#php--laravel-installation)
   - [Artisan CLI Command](#artisan-cli-command)
   - [Programmatic PHP Execution](#programmatic-php-execution)
 - [7. Complete Configuration Reference](#7-complete-configuration-reference)
@@ -35,6 +37,18 @@ This guide provides end-to-end instructions for installing, configuring, integra
   - [Linux VPS & Nginx](#linux-vps--nginx)
   - [cPanel / CloudLinux / LiteSpeed / Phusion Passenger](#cpanel--cloudlinux--litespeed--phusion-passenger)
 - [9. Troubleshooting & FAQs](#9-troubleshooting--faqs)
+
+---
+
+## Supported Platforms & Installation Summary
+
+| Platform | Package Manager | Direct GitHub Install Command | Minimum Runtime |
+| :--- | :--- | :--- | :--- |
+| **Go** | `go get` | `go get github.com/Zihad-Bepari/GoLoadTest` | Go 1.21+ |
+| **Node.js** | `npm` / `yarn` / `pnpm` | `npm install github:Zihad-Bepari/GoLoadTest` | Node.js 18+ |
+| **NestJS** | `npm` / `yarn` / `pnpm` | `npm install github:Zihad-Bepari/GoLoadTest` | NestJS 9+ |
+| **PHP** | `composer` | `composer require zihad-bepari/goloadtest:dev-main` | PHP 7.4+ / 8.x |
+| **Laravel** | `composer` | `composer require zihad-bepari/goloadtest:dev-main` | Laravel 9, 10, 11 |
 
 ---
 
@@ -122,11 +136,11 @@ Open `http://localhost:8080` in your browser to configure endpoints, trigger liv
 
 ## 3. Go Native Library Integration
 
-### Installation
+### Go Installation
 
-Add the library module to your `go.mod`:
+Add the library module directly from GitHub into your `go.mod`:
 ```bash
-go get github.com/goloadtest/goloadtest
+go get github.com/Zihad-Bepari/GoLoadTest
 ```
 
 ### Standard Usage Example
@@ -140,8 +154,8 @@ import (
 	"log"
 	"time"
 
-	"github.com/goloadtest/goloadtest"
-	"github.com/goloadtest/goloadtest/pkg/types"
+	"github.com/Zihad-Bepari/GoLoadTest"
+	"github.com/Zihad-Bepari/GoLoadTest/pkg/types"
 )
 
 func main() {
@@ -155,9 +169,9 @@ func main() {
 
 	cfg.Endpoints = []types.EndpointSpec{
 		{
-			Name:   "Public Products API",
-			URL:    "https://api.example.com/v1/products",
-			Method: "GET",
+			Name:    "Public Products API",
+			URL:     "https://api.example.com/v1/products",
+			Method:  "GET",
 			Timeout: 5 * time.Second,
 		},
 	}
@@ -197,8 +211,8 @@ import (
 	"time"
 
 	"github.com/gin-gonic/gin"
-	"github.com/goloadtest/goloadtest"
-	"github.com/goloadtest/goloadtest/pkg/types"
+	"github.com/Zihad-Bepari/GoLoadTest"
+	"github.com/Zihad-Bepari/GoLoadTest/pkg/types"
 )
 
 func setupRouter() *gin.Engine {
@@ -248,19 +262,24 @@ if regression.HasRegression {
 
 ## 4. Node.js & Express Integration
 
-### Installation
+### Node.js Installation
 
-Install via npm or vendor directly into your project's `src/libs/` directory:
+Install directly from GitHub into your Node.js project:
 
 ```bash
-npm install goloadtest
+# Standard GitHub install:
+npm install github:Zihad-Bepari/GoLoadTest
 ```
 
-### 1-Click Interactive Dashboard Middleware
+> **Note:** If you use yarn or pnpm:
+> `yarn add github:Zihad-Bepari/GoLoadTest` or `pnpm add github:Zihad-Bepari/GoLoadTest`
+
+### 1-Click Interactive Dashboard Middleware (`app.js`)
 
 Mount the built-in middleware inside your Express application (`app.js` or `server.js`). It automatically introspects your router stack, detects declared routes, and renders an interactive dashboard:
 
 ```javascript
+// app.js
 const express = require('express');
 const { loadtestMiddleware } = require('goloadtest');
 
@@ -270,7 +289,7 @@ const app = express();
 app.use('/api/v1/products', productsRouter);
 app.use('/api/v1/users', usersRouter);
 
-// Mount GoLoadTest Dashboard at /loadtest
+// 🚀 Mount GoLoadTest Interactive Studio at /loadtest
 app.use('/loadtest', loadtestMiddleware({
   name: 'API Stress Test Studio',
   duration: '20m',               // Open-ended duration for break-to-crash
@@ -309,6 +328,14 @@ benchmark();
 ---
 
 ## 5. NestJS Integration
+
+### NestJS Installation
+
+Install directly from GitHub into your NestJS project:
+
+```bash
+npm install github:Zihad-Bepari/GoLoadTest
+```
 
 ### Module Setup
 
@@ -359,12 +386,37 @@ export class LoadTestController {
 
 ## 6. PHP & Laravel Integration
 
-### Installation
+### PHP / Laravel Installation
 
-Require the package via Composer or register the adapter in your `composer.json`:
+Install GoLoadTest directly from GitHub using Composer:
 
+#### Option A: Quick Command Line (Recommended)
+Run these two commands in your Laravel terminal:
 ```bash
-composer require goloadtest/goloadtest-laravel
+composer config repositories.goloadtest vcs https://github.com/Zihad-Bepari/GoLoadTest.git
+composer require zihad-bepari/goloadtest:dev-main
+```
+
+#### Option B: Add to `composer.json` Manually
+Add GoLoadTest as a VCS repository in your `composer.json`:
+
+```json
+{
+  "repositories": [
+    {
+      "type": "vcs",
+      "url": "https://github.com/Zihad-Bepari/GoLoadTest.git"
+    }
+  ],
+  "require": {
+    "zihad-bepari/goloadtest": "dev-main"
+  }
+}
+```
+
+Then run:
+```bash
+composer update
 ```
 
 ### Artisan CLI Command
@@ -373,6 +425,7 @@ The package automatically registers the `test:load` Artisan command:
 
 ```bash
 # Auto-discover all registered Laravel routes and run stress test
+php artisan test:load
 php artisan test:load
 
 # Test specific endpoint with custom duration and concurrency

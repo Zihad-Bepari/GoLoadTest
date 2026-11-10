@@ -8,8 +8,8 @@ import (
 	"sync/atomic"
 	"time"
 
-	"github.com/goloadtest/goloadtest/pkg/requester"
-	"github.com/goloadtest/goloadtest/pkg/types"
+	"github.com/Zihad-Bepari/GoLoadTest/pkg/requester"
+	"github.com/Zihad-Bepari/GoLoadTest/pkg/types"
 )
 
 // EndpointCollector aggregates metrics for a single endpoint.

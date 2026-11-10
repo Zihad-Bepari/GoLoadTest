@@ -9,10 +9,10 @@ import (
 	"sync/atomic"
 	"time"
 
-	"github.com/goloadtest/goloadtest/pkg/metrics"
-	"github.com/goloadtest/goloadtest/pkg/monitor"
-	"github.com/goloadtest/goloadtest/pkg/requester"
-	"github.com/goloadtest/goloadtest/pkg/types"
+	"github.com/Zihad-Bepari/GoLoadTest/pkg/metrics"
+	"github.com/Zihad-Bepari/GoLoadTest/pkg/monitor"
+	"github.com/Zihad-Bepari/GoLoadTest/pkg/requester"
+	"github.com/Zihad-Bepari/GoLoadTest/pkg/types"
 )
 
 // ProgressSnapshot provides real-time state for live CLI UI or listeners.

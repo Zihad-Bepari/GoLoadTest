@@ -1,0 +1,20 @@
+{
+  "name": "@goloadtest/core",
+  "version": "1.0.0",
+  "description": "Node.js & Express adapter for GoLoadTest - high performance API testing engine",
+  "main": "index.js",
+  "types": "index.d.ts",
+  "scripts": {
+    "test": "node test.js"
+  },
+  "keywords": [
+    "load-testing",
+    "performance",
+    "api-testing",
+    "stress-testing",
+    "express",
+    "nestjs"
+  ],
+  "author": "GoLoadTest Team",
+  "license": "MIT"
+}

@@ -4,7 +4,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/goloadtest/goloadtest/pkg/types"
+	"github.com/Zihad-Bepari/GoLoadTest/pkg/types"
 )
 
 func TestAnalyzer_Thresholds(t *testing.T) {
