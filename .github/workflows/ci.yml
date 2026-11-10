@@ -95,7 +95,7 @@ jobs:
         run: |
           php -l adapters/php-laravel/src/GoLoadTest.php
           php -l adapters/php-laravel/src/GoLoadTestServiceProvider.php
-          php -l adapters/php-laravel/src/Commands/RunLoadTestCommand.php
+          php -l adapters/php-laravel/src/Commands/LoadTestCommand.php
 
   # ──────────────────────────────────────────────────────────────────────────
   # Job 4: Build Cross-Platform CLI Binaries
@@ -127,23 +127,12 @@ jobs:
     steps:
       - name: Checkout Repository
         uses: actions/checkout@v4
-        with:
-          fetch-depth: 0
 
       - name: Set up Go
         uses: actions/setup-go@v5
         with:
           go-version: '1.23'
           cache: true
-
-      - name: Determine Binary Version
-        id: vars
-        run: |
-          if [[ "${{ github.ref }}" == refs/tags/* ]]; then
-            echo "VERSION=${GITHUB_REF#refs/tags/}" >> "$GITHUB_OUTPUT"
-          else
-            echo "VERSION=$(git describe --tags --always --dirty 2>/dev/null || echo dev)" >> "$GITHUB_OUTPUT"
-          fi
 
       - name: Compile Binary
         env:
@@ -152,8 +141,14 @@ jobs:
           CGO_ENABLED: 0
         run: |
           mkdir -p dist
+          VERSION="1.0.0"
+          if [[ "${{ github.ref }}" == refs/tags/* ]]; then
+            VERSION="${GITHUB_REF#refs/tags/v}"
+          elif [ -n "${{ github.sha }}" ]; then
+            VERSION="$(echo "${{ github.sha }}" | cut -c1-7)"
+          fi
           go build \
-            -ldflags="-s -w -X main.version=${{ steps.vars.outputs.VERSION }}" \
+            -ldflags="-s -w -X 'main.version=${VERSION}'" \
             -trimpath \
             -o dist/${{ matrix.output }} \
             ./cmd/goloadtest
