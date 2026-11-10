@@ -52,7 +52,7 @@ func TestClient_Execute_Success(t *testing.T) {
 
 func TestClient_Execute_Timeout(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		time.Sleep(100 * time.Millisecond)
+		time.Sleep(300 * time.Millisecond)
 		w.WriteHeader(http.StatusOK)
 	}))
 	defer server.Close()
@@ -62,7 +62,7 @@ func TestClient_Execute_Timeout(t *testing.T) {
 		Name:    "SlowEndpoint",
 		URL:     server.URL,
 		Method:  "GET",
-		Timeout: 20 * time.Millisecond,
+		Timeout: 10 * time.Millisecond,
 	}
 
 	rec := client.Execute(context.Background(), spec)

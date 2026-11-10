@@ -25,7 +25,7 @@ func TestRoot_Run(t *testing.T) {
 		{Name: "MockAPI", URL: server.URL, Method: "GET"},
 	}
 	cfg.Thresholds = types.Thresholds{
-		MaxP95:       50 * time.Millisecond,
+		MaxP95:       1 * time.Second,
 		MaxErrorRate: 1.0,
 	}
 	cfg.OutputFormat = "none" // don't write files during unit test

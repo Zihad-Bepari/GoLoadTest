@@ -54,6 +54,8 @@ func (m *Monitor) Start(ctx context.Context) {
 	if !m.cfg.Enabled {
 		return
 	}
+	cpu, ram := m.sample()
+	m.record(cpu, ram)
 
 	m.wg.Add(1)
 	go func() {
