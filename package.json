@@ -10,8 +10,8 @@
       "default": "./adapters/nodejs/index.js"
     },
     "./nestjs": {
-      "types": "./adapters/nestjs/goloadtest.module.ts",
-      "default": "./adapters/nodejs/index.js"
+      "types": "./adapters/nestjs/index.d.ts",
+      "default": "./adapters/nestjs/index.js"
     }
   },
   "keywords": [

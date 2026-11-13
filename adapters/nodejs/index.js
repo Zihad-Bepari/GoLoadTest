@@ -44,6 +44,12 @@ function resolveBinary() {
           fs.chmodSync(candidate, 0o755);
         } catch (_) {}
       }
+      // Auto-clear macOS Gatekeeper quarantine if on macOS
+      if (platform === 'darwin') {
+        try {
+          require('child_process').execSync(`xattr -d com.apple.quarantine "${candidate}" 2>/dev/null`);
+        } catch (_) {}
+      }
       return candidate;
     }
   }
@@ -78,10 +84,7 @@ function parseDurationMs(str) {
   return parseFloat(s) || 1000;
 }
 
-/**
- * Native Node.js in-process HTTP stress test engine fallback.
- * Guarantees tests run seamlessly even if native binary execution is restricted by the host (cPanel CageFS, Vercel, Docker).
- */
+// In-process HTTP load test fallback
 function runInProcessTest(options) {
   return new Promise((resolve) => {
     const rawEndpoints = options.endpoints || [
@@ -328,9 +331,7 @@ function runInProcessTest(options) {
   });
 }
 
-/**
- * Runs the GoLoadTest engine with specified options.
- */
+// Run load test via binary or in-process engine
 function runLoadTest(options) {
   return new Promise((resolve, reject) => {
     const binary = resolveBinary();
@@ -456,10 +457,7 @@ function parseRegexpMount(regexp) {
   return cleanPrefix(cleaned);
 }
 
-/**
- * Automatically discovers all registered HTTP routes from an Express app or router.
- * Inspects all direct routes, mounted sub-routers, and handles parameterized paths.
- */
+// Discover registered HTTP routes from Express app or router
 function extractExpressRoutes(app) {
   const routes = [];
   if (!app) return routes;
@@ -579,10 +577,7 @@ async function autoTest(app, options = {}) {
   });
 }
 
-/**
- * Express Middleware that renders the 1-Click Load Test Landing Page
- * and automatically auto-discovers all project routes and host domain!
- */
+// Express middleware for load testing dashboard
 function loadtestMiddleware(appOrOptions = {}) {
   let passedApp = null;
   let customOptions = {};
@@ -1967,5 +1962,11 @@ module.exports = {
   runLoadTest,
   resolveBinary,
   autoTest,
-  extractRoutes: extractExpressRoutes
+  extractRoutes: extractExpressRoutes,
+  get GoLoadTestService() {
+    return require('../nestjs').GoLoadTestService;
+  },
+  get GoLoadTestModule() {
+    return require('../nestjs').GoLoadTestModule;
+  }
 };
